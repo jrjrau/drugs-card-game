@@ -1,0 +1,12 @@
+services:
+  drugs:
+    build: .
+    image: drugs-card-game
+    container_name: drugs-card-game
+    ports:
+      - "3000:3000"
+    environment:
+      - ADMIN_KEY=change-me-please
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

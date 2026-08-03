@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drugs — Dashboard</title>
+<style>
+  :root { --felt: #1e5c3a; --felt-dark: #14432a; --gold: #ffd54a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 100%);
+    color: #fff; min-height: 100vh;
+    padding: 20px; max-width: 1000px; margin: 0 auto;
+  }
+  h1 { font-size: 1.3rem; letter-spacing: 3px; margin-bottom: 4px; }
+  .sub { font-size: .8rem; opacity: .6; margin-bottom: 18px; }
+  h2 { font-size: .95rem; letter-spacing: 2px; color: var(--gold); margin: 22px 0 10px; text-transform: uppercase; }
+  .cardbox {
+    background: rgba(0,0,0,.28);
+    border-radius: 12px; padding: 14px 18px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th { text-align: left; opacity: .6; font-weight: 600; padding: 4px 10px; font-size: .75rem; text-transform: uppercase; letter-spacing: 1px; }
+  td { padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.08); }
+  .pill { display: inline-block; padding: 1px 10px; border-radius: 10px; font-size: .75rem; background: rgba(255,255,255,.15); margin-right: 4px; }
+  .pill.on { background: #4caf50; }
+  .pill.off { background: #b23b3b; }
+  .pill.bot { background: #5f7fd9; }
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .stat { background: rgba(0,0,0,.28); border-radius: 12px; padding: 12px 16px; }
+  .stat .num { font-size: 1.6rem; font-weight: 700; color: var(--gold); }
+  .stat .lbl { font-size: .74rem; opacity: .7; text-transform: uppercase; letter-spacing: 1px; }
+  .rankbar { display: flex; align-items: flex-end; gap: 5px; height: 110px; padding-top: 8px; }
+  .rankbar .col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .rankbar .bar { width: 100%; background: var(--gold); border-radius: 4px 4px 0 0; min-height: 2px; opacity: .85; }
+  .rankbar .cap { font-size: .7rem; opacity: .7; }
+  .rankbar .n { font-size: .65rem; opacity: .5; }
+  #login { display: flex; gap: 8px; margin: 40px auto; justify-content: center; }
+  input {
+    padding: 10px 12px; border: none; border-radius: 8px;
+    font-family: inherit; font-size: 1rem; width: 240px;
+  }
+  button {
+    font-family: inherit; font-size: .95rem; padding: 8px 20px;
+    border: none; border-radius: 8px; cursor: pointer;
+    background: var(--gold); color: #333; font-weight: 600;
+  }
+  #err { color: #ef9a9a; text-align: center; min-height: 1.2em; }
+  #dash { display: none; }
+  .muted { opacity: .55; }
+  .warn { color: #ffb74d; font-size: .8rem; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>D R U G S — DASHBOARD</h1>
+<div class="sub" id="uptime"></div>
+
+<div id="login">
+  <input type="password" id="key" placeholder="Admin key">
+  <button onclick="tryKey()">Open</button>
+</div>
+<div id="err"></div>
+
+<div id="dash">
+  <h2>Live — <span id="conn-count">0</span> connection(s)</h2>
+  <div class="cardbox">
+    <table>
+      <thead><tr><th>Room</th><th>Phase</th><th>Players</th><th>Room age</th><th>Game time</th><th>Deck / Pile</th><th>Options</th></tr></thead>
+      <tbody id="rooms"></tbody>
+    </table>
+    <div class="muted" id="no-rooms" style="padding:8px 10px;">No active rooms.</div>
+    <div class="warn" id="stats-warn" style="display:none">⚠ Stats file isn't writable — counters reset on restart. Check the data volume permissions.</div>
+  </div>
+
+  <h2>All-time stats</h2>
+  <div class="statgrid" id="stats"></div>
+
+  <h2>Cards played by rank</h2>
+  <div class="cardbox"><div class="rankbar" id="ranks"></div></div>
+
+  <h2>Wins</h2>
+  <div class="cardbox"><table><tbody id="wins"></tbody></table></div>
+</div>
+
+<script>
+"use strict";
+const RANK_LABEL = r => ({11:"J",12:"Q",13:"K",14:"A"}[r] || String(r));
+let key = localStorage.getItem("drugsAdminKey") || "";
+let timer = null;
+
+function fmtDur(ms) {
+  if (ms == null) return "—";
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+function tryKey() {
+  key = document.getElementById("key").value.trim();
+  refresh();
+}
+
+async function refresh() {
+  if (!key) return;
+  let data;
+  try {
+    const res = await fetch("/admin/data.json?key=" + encodeURIComponent(key));
+    if (res.status === 403) {
+      document.getElementById("err").textContent = "Wrong key.";
+      localStorage.removeItem("drugsAdminKey");
+      return;
+    }
+    data = await res.json();
+  } catch {
+    document.getElementById("err").textContent = "Server unreachable.";
+    return;
+  }
+  localStorage.setItem("drugsAdminKey", key);
+  document.getElementById("err").textContent = "";
+  document.getElementById("login").style.display = "none";
+  document.getElementById("dash").style.display = "block";
+  if (!timer) timer = setInterval(refresh, 2000);
+  renderDash(data);
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+function renderDash(d) {
+  document.getElementById("uptime").textContent = "Server uptime " + fmtDur(d.uptimeMs);
+  document.getElementById("conn-count").textContent = d.connections;
+  document.getElementById("stats-warn").style.display = d.statsWritable ? "none" : "block";
+
+  const tb = document.getElementById("rooms");
+  tb.innerHTML = "";
+  document.getElementById("no-rooms").style.display = d.rooms.length ? "none" : "block";
+  for (const r of d.rooms) {
+    const tr = document.createElement("tr");
+    const players = r.players.map(p => {
+      const cls = p.bot ? "bot" : (p.connected ? "on" : "off");
+      const extra = r.phase === "playing" ? ` (${p.cardsLeft})` : "";
+      return `<span class="pill ${cls}">${esc(p.name)}${extra}</span>`;
+    }).join("");
+    tr.innerHTML = `<td><b>${r.code}</b></td><td>${r.phase}</td><td>${players}</td>
+      <td>${fmtDur(r.ageMs)}</td><td>${fmtDur(r.gameAgeMs)}</td>
+      <td>${r.deckCount} / ${r.pileCount}</td>
+      <td class="muted">${r.opts.decks} deck, OD ${r.opts.burn || "off"}</td>`;
+    tb.appendChild(tr);
+  }
+
+  const s = d.stats;
+  const entries = [
+    ["Games started", s.gamesStarted], ["Games finished", s.gamesFinished],
+    ["Cards played", s.cardsPlayed], ["Piles picked up", s.pilePickups],
+    ["Cards picked up", s.cardsPickedUp], ["Piles killed", s.pilesBurned],
+    ["Overdoses", s.overdoses], ["Order reversals", s.reversals],
+    ["Blind flips", s.blindFlips], ["Blind fails", s.blindFails],
+    ["Chat messages", s.chatMessages],
+    ["Aces played", (s.byRank && s.byRank[14]) || 0],
+  ];
+  document.getElementById("stats").innerHTML = entries.map(([l, n]) =>
+    `<div class="stat"><div class="num">${(n || 0).toLocaleString()}</div><div class="lbl">${l}</div></div>`).join("");
+
+  const ranks = [2,3,4,5,6,7,8,9,10,11,12,13,14];
+  const max = Math.max(1, ...ranks.map(r => (s.byRank && s.byRank[r]) || 0));
+  document.getElementById("ranks").innerHTML = ranks.map(r => {
+    const n = (s.byRank && s.byRank[r]) || 0;
+    return `<div class="col"><span class="n">${n.toLocaleString()}</span>
+      <div class="bar" style="height:${Math.round(90 * n / max)}px"></div>
+      <span class="cap">${RANK_LABEL(r)}</span></div>`;
+  }).join("");
+
+  const wins = Object.entries(s.wins || {}).sort((a, b) => b[1] - a[1]).slice(0, 20);
+  document.getElementById("wins").innerHTML = wins.length
+    ? wins.map(([n, w]) => `<tr><td>${esc(n)}</td><td>${w}</td></tr>`).join("")
+    : `<tr><td class="muted">No finished games yet.</td></tr>`;
+}
+
+document.getElementById("key").addEventListener("keydown", e => { if (e.key === "Enter") tryKey(); });
+if (key) { document.getElementById("key").value = key; refresh(); }
+</script>
+</body>
+</html>

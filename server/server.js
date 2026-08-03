@@ -1,0 +1,582 @@
+"use strict";
+/* Drugs — multiplayer server.
+ * Plain Node http for static files + ws for the game protocol.
+ * The server is authoritative: all rules run here; clients only render. */
+
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { WebSocketServer } = require("ws");
+
+const PORT = process.env.PORT || 3000;
+const PUBLIC_DIR = path.join(__dirname, "public");
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
+const ADMIN_KEY = process.env.ADMIN_KEY || "drugs-admin";
+const REVEAL_MS = 1600;
+const BOT_DELAY_MS = 900;
+const SERVER_STARTED = Date.now();
+
+/* ================= Stats (persisted) ================= */
+const STATS_FILE = path.join(DATA_DIR, "stats.json");
+let statsWritable = true;
+const stats = {
+  gamesStarted: 0,
+  gamesFinished: 0,
+  cardsPlayed: 0,
+  byRank: {},            // rank -> times played
+  pilePickups: 0,
+  cardsPickedUp: 0,
+  pilesBurned: 0,        // 10s + overdoses combined
+  overdoses: 0,
+  reversals: 0,          // jacks that flipped the order
+  blindFlips: 0,
+  blindFails: 0,
+  chatMessages: 0,
+  wins: {},              // player name -> wins
+};
+try {
+  Object.assign(stats, JSON.parse(fs.readFileSync(STATS_FILE, "utf8")));
+} catch { /* first run */ }
+
+let statsDirty = false;
+function bump(key, n = 1) { stats[key] += n; statsDirty = true; }
+function bumpMap(map, key, n = 1) { stats[map][key] = (stats[map][key] || 0) + n; statsDirty = true; }
+function saveStats() {
+  if (!statsDirty || !statsWritable) return;
+  statsDirty = false;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+  } catch (e) {
+    statsWritable = false;
+    console.warn("Stats can't be saved (" + e.code + ") — continuing in-memory only. Check the data volume permissions.");
+  }
+}
+setInterval(saveStats, 10000);
+process.on("SIGTERM", () => { saveStats(); process.exit(0); });
+process.on("SIGINT", () => { saveStats(); process.exit(0); });
+
+/* ================= Static file server ================= */
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, "http://x");
+  let file = url.pathname;
+  if (file === "/") file = "/index.html";
+  if (file === "/admin") file = "/admin.html";
+
+  if (file === "/admin/data.json") {
+    if (url.searchParams.get("key") !== ADMIN_KEY) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "bad key" }));
+    }
+    const now = Date.now();
+    const roomList = [...rooms.values()].map(r => ({
+      code: r.code,
+      phase: r.phase,
+      ageMs: now - r.createdAt,
+      gameAgeMs: r.gameStartedAt ? now - r.gameStartedAt : null,
+      opts: r.opts,
+      deckCount: r.deck.length,
+      pileCount: r.pile.length,
+      players: r.players.map(p => ({
+        name: p.name, bot: p.bot, connected: p.connected,
+        handCount: p.hand.length,
+        cardsLeft: p.hand.length + p.faceUp.length + p.faceDown.length,
+      })),
+    }));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      uptimeMs: now - SERVER_STARTED,
+      connections: wss ? wss.clients.size : 0,
+      statsWritable,
+      rooms: roomList,
+      stats,
+    }));
+  }
+
+  const full = path.join(PUBLIC_DIR, path.normalize(file));
+  if (!full.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end(); }
+  fs.readFile(full, (err, data) => {
+    if (err) { res.writeHead(404); return res.end("Not found"); }
+    res.writeHead(200, { "Content-Type": MIME[path.extname(full)] || "application/octet-stream" });
+    res.end(data);
+  });
+});
+
+/* ================= Game rules (same as solo client) ================= */
+const SUITS = ["♠", "♥", "♦", "♣"];
+const RANKS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+const RANK_LABEL = r => ({ 11: "J", 12: "Q", 13: "K", 14: "A" }[r] || String(r));
+const cardName = c => RANK_LABEL(c.rank) + c.suit;
+
+function makeDeck(nDecks) {
+  const d = [];
+  for (let n = 0; n < nDecks; n++)
+    for (const s of SUITS) for (const r of RANKS) d.push({ rank: r, suit: s });
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+function effectiveTop(room) {
+  for (let i = room.pile.length - 1; i >= 0; i--) {
+    if (room.pile[i].rank === 3) continue;
+    return room.pile[i].rank;
+  }
+  return null;
+}
+
+function canPlayRank(room, r) {
+  if (r === 2 || r === 3 || r === 10) return true;
+  const top = effectiveTop(room);
+  if (room.sevenActive) return r <= 7;
+  if (top === null || top === 2) return true;
+  return r >= top;
+}
+
+function activeZone(p) {
+  if (p.hand.length > 0) return "hand";
+  if (p.faceUp.length > 0) return "faceUp";
+  if (p.faceDown.length > 0) return "faceDown";
+  return null;
+}
+
+function legalIndices(room, p) {
+  const zone = activeZone(p);
+  if (!zone) return [];
+  if (zone === "faceDown") return p.faceDown.map((c, i) => i);
+  return p[zone].map((c, i) => i).filter(i => canPlayRank(room, p[zone][i].rank));
+}
+
+function drawUp(room, p) {
+  while (p.hand.length < 3 && room.deck.length > 0) p.hand.push(room.deck.pop());
+  sortHand(p);
+}
+function sortHand(p) { p.hand.sort((a, b) => a.rank - b.rank); }
+
+function resolvePlay(room, cards) {
+  for (const c of cards) room.pile.push(c);
+  // each Jack flips the turn order (a pair cancels out)
+  let reversed = false;
+  for (const c of cards) if (c.rank === 11) { room.direction *= -1; reversed = !reversed; bump("reversals"); }
+  if (reversed) logMsg(room, "Jack — play order reversed!");
+  bump("cardsPlayed", cards.length);
+  for (const c of cards) bumpMap("byRank", c.rank);
+  let burned = cards[0].rank === 10;
+  const eff = effectiveTop(room);
+
+  if (!burned && room.opts.burn > 0 && room.pile.length >= room.opts.burn) {
+    const n = room.pile.length;
+    const r0 = room.pile[n - 1].rank;
+    if (r0 !== 3) {
+      let run = 1;
+      while (run < n && room.pile[n - 1 - run].rank === r0) run++;
+      if (run >= room.opts.burn) { burned = true; bump("overdoses"); }
+    }
+  }
+
+  if (burned) {
+    bump("pilesBurned");
+    room.pile = [];
+    room.sevenActive = false;
+    return { burned: true, goAgain: true };
+  }
+  room.sevenActive = (eff === 7);
+  return { burned: false, goAgain: false };
+}
+
+function pickUpPile(room, p) {
+  bump("pilePickups");
+  bump("cardsPickedUp", room.pile.length);
+  p.hand.push(...room.pile);
+  room.pile = [];
+  room.sevenActive = false;
+  sortHand(p);
+}
+
+function hasWon(room, p) {
+  return p.hand.length === 0 && p.faceUp.length === 0 && p.faceDown.length === 0 && room.deck.length === 0;
+}
+
+/* ================= Rooms ================= */
+const rooms = new Map(); // code -> room
+let nextPlayerId = 1;
+
+function makeCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code;
+  do {
+    code = "";
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  } while (rooms.has(code));
+  return code;
+}
+
+function makeRoom(hostWs, hostName, opts) {
+  const room = {
+    code: makeCode(),
+    phase: "lobby",           // lobby | playing | over
+    opts: sanitizeOpts(opts),
+    players: [],              // {id, name, ws|null, bot, hand, faceUp, faceDown, connected}
+    deck: [], pile: [],
+    turn: 0,
+    direction: 1,
+    sevenActive: false,
+    busy: false,              // true during a reveal pause
+    timer: null,
+    createdAt: Date.now(),
+    gameStartedAt: null,
+  };
+  rooms.set(room.code, room);
+  addHuman(room, hostWs, hostName);
+  return room;
+}
+
+function sanitizeOpts(o) {
+  const clamp = (v, lo, hi, d) => Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : d;
+  return {
+    bots: clamp(o && o.bots, 0, 5, 0),
+    decks: clamp(o && o.decks, 1, 4, 1),
+    burn: [0, 3, 4, 5, 6, 7, 8].includes(o && o.burn) ? o.burn : 4,
+  };
+}
+
+function addHuman(room, ws, name) {
+  const p = { id: nextPlayerId++, name: name.slice(0, 16) || "Player", ws, bot: false, connected: true, hand: [], faceUp: [], faceDown: [] };
+  room.players.push(p);
+  ws._room = room;
+  ws._player = p;
+  return p;
+}
+
+function send(ws, msg) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+function broadcast(room, msg) {
+  for (const p of room.players) if (!p.bot && p.connected) send(p.ws, msg);
+}
+function chatMsg(room, from, text) {
+  broadcast(room, { t: "chat", from, text });
+}
+function logMsg(room, text) {
+  broadcast(room, { t: "log", text });
+}
+
+/* Per-player view of the room */
+function viewFor(room, me) {
+  return {
+    code: room.code,
+    phase: room.phase,
+    opts: room.opts,
+    hostId: room.players.find(p => !p.bot) ? room.players.find(p => !p.bot).id : null,
+    youId: me.id,
+    isHost: isHost(room, me),
+    deckCount: room.deck.length,
+    pileCount: room.pile.length,
+    pileTop: room.pile.slice(-3),
+    effectiveTop: effectiveTop(room),
+    sevenActive: room.sevenActive,
+    direction: room.direction,
+    turnId: room.phase === "playing" ? room.players[room.turn].id : null,
+    busy: room.busy,
+    players: room.players.map(p => ({
+      id: p.id, name: p.name, bot: p.bot, connected: p.connected,
+      handCount: p.hand.length,
+      faceUp: p.faceUp,
+      faceDownCount: p.faceDown.length,
+      hand: p === me ? p.hand : undefined,
+    })),
+  };
+}
+function isHost(room, p) {
+  const firstHuman = room.players.find(q => !q.bot);
+  return firstHuman && firstHuman.id === p.id;
+}
+function pushState(room, reveal) {
+  for (const p of room.players) {
+    if (p.bot || !p.connected) continue;
+    send(p.ws, { t: "state", view: viewFor(room, p), reveal: reveal || null });
+  }
+}
+
+/* ================= Game flow ================= */
+function startGame(room) {
+  room.deck = makeDeck(room.opts.decks);
+  room.pile = [];
+  room.direction = 1;
+  room.sevenActive = false;
+  room.busy = false;
+  room.phase = "playing";
+
+  // remove old bots, add per current opts
+  room.players = room.players.filter(p => !p.bot);
+  for (let i = 1; i <= room.opts.bots; i++)
+    room.players.push({ id: nextPlayerId++, name: "Bot " + i, ws: null, bot: true, connected: true, hand: [], faceUp: [], faceDown: [] });
+
+  for (const p of room.players) {
+    p.hand = []; p.faceUp = []; p.faceDown = [];
+    for (let i = 0; i < 3; i++) p.faceDown.push(room.deck.pop());
+    for (let i = 0; i < 3; i++) p.faceUp.push(room.deck.pop());
+    for (let i = 0; i < 3; i++) p.hand.push(room.deck.pop());
+    sortHand(p);
+  }
+  room.turn = Math.floor(Math.random() * room.players.length);
+  room.gameStartedAt = Date.now();
+  bump("gamesStarted");
+  logMsg(room, `Game started: ${room.players.length} players, ${room.opts.decks} deck(s), Overdose ${room.opts.burn || "off"}. ${room.players[room.turn].name} goes first.`);
+  pushState(room);
+  maybeBotTurn(room);
+}
+
+function advanceTurn(room) {
+  if (room.phase !== "playing") return;
+  const n = room.players.length;
+  room.turn = (room.turn + room.direction + n) % n;
+  pushState(room);
+  maybeBotTurn(room);
+}
+
+function currentPlayer(room) { return room.players[room.turn]; }
+
+function maybeBotTurn(room) {
+  if (room.phase !== "playing" || room.busy) return;
+  const p = currentPlayer(room);
+  if (p.bot || !p.connected) {
+    clearTimeout(room.timer);
+    room.timer = setTimeout(() => botMove(room, p), BOT_DELAY_MS);
+  }
+}
+
+function finishPlay(room, p, res) {
+  drawUp(room, p);
+  if (hasWon(room, p)) return endGame(room, p);
+  if (res.goAgain) {
+    pushState(room);
+    if (p.bot || !p.connected) {
+      clearTimeout(room.timer);
+      room.timer = setTimeout(() => botMove(room, p), BOT_DELAY_MS);
+    }
+  } else {
+    advanceTurn(room);
+  }
+}
+
+function endGame(room, winner) {
+  room.phase = "over";
+  clearTimeout(room.timer);
+  bump("gamesFinished");
+  bumpMap("wins", winner.name);
+  logMsg(room, `${winner.name} wins!`);
+  broadcast(room, { t: "gameover", winner: winner.name });
+  pushState(room);
+}
+
+/* Flip a face-down card with a visible reveal pause */
+function flipFaceDown(room, p, idx) {
+  const card = p.faceDown.splice(idx, 1)[0];
+  const ok = canPlayRank(room, card.rank);
+  bump("blindFlips");
+  if (!ok) bump("blindFails");
+  room.busy = true;
+  pushState(room, { card, ok, who: p.name });
+  clearTimeout(room.timer);
+  room.timer = setTimeout(() => {
+    room.busy = false;
+    if (ok) {
+      const res = resolvePlay(room, [card]);
+      logMsg(room, `${p.name} blind-plays ${cardName(card)}${res.burned ? " — pile overdosed!" : ""}`);
+      finishPlay(room, p, res);
+    } else {
+      p.hand.push(card);
+      pickUpPile(room, p);
+      logMsg(room, `${p.name} flipped ${cardName(card)} — illegal, picks up the pile.`);
+      advanceTurn(room);
+    }
+  }, REVEAL_MS);
+}
+
+/* ================= Bot AI ================= */
+function botMove(room, p) {
+  if (room.phase !== "playing" || room.busy || currentPlayer(room) !== p) return;
+  const zone = activeZone(p);
+  if (!zone) return advanceTurn(room);
+
+  if (zone === "faceDown") {
+    const i = Math.floor(Math.random() * p.faceDown.length);
+    return flipFaceDown(room, p, i);
+  }
+
+  const src = p[zone];
+  const legal = legalIndices(room, p);
+  if (legal.length === 0) {
+    pickUpPile(room, p);
+    logMsg(room, `${p.name} can't play — picks up the pile.`);
+    return advanceTurn(room);
+  }
+  const specials = new Set([2, 3, 10]);
+  const nonSpecial = legal.filter(i => !specials.has(src[i].rank));
+  const choiceRank = nonSpecial.length
+    ? Math.min(...nonSpecial.map(i => src[i].rank))
+    : src[legal[0]].rank;
+  const idxs = legal.filter(i => src[i].rank === choiceRank);
+  const cards = idxs.map(i => src[i]);
+  for (let k = idxs.length - 1; k >= 0; k--) src.splice(idxs[k], 1);
+  const res = resolvePlay(room, cards);
+  logMsg(room, `${p.name} plays ${cards.map(cardName).join(" ")}${res.burned ? " — pile overdosed!" : ""}`);
+  finishPlay(room, p, res);
+}
+
+/* ================= Message handling ================= */
+const wss = new WebSocketServer({ server });
+
+// Heartbeat: keeps connections alive through reverse proxies (Synology cuts
+// idle connections after ~60s) and reaps dead ones.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws._dead) { ws.terminate(); continue; }
+    ws._dead = true;
+    ws.ping();
+  }
+}, 30000);
+
+wss.on("connection", ws => {
+  ws._dead = false;
+  ws.on("pong", () => { ws._dead = false; });
+  ws.on("message", raw => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    try { handle(ws, msg); } catch (e) {
+      console.error(e);
+      send(ws, { t: "error", msg: "Server error." });
+    }
+  });
+  ws.on("close", () => {
+    const room = ws._room, p = ws._player;
+    if (!room || !p) return;
+    p.connected = false;
+    p.ws = null;
+    if (room.phase === "lobby") {
+      room.players = room.players.filter(q => q !== p);
+      if (room.players.filter(q => !q.bot).length === 0) {
+        clearTimeout(room.timer);
+        rooms.delete(room.code);
+        return;
+      }
+    } else {
+      logMsg(room, `${p.name} disconnected — a bot takes over.`);
+    }
+    if (room.players.filter(q => !q.bot && q.connected).length === 0) {
+      clearTimeout(room.timer);
+      rooms.delete(room.code);
+      return;
+    }
+    pushState(room);
+    maybeBotTurn(room); // if it was their turn, the bot brain takes it
+  });
+});
+
+function handle(ws, msg) {
+  const room = ws._room, me = ws._player;
+
+  switch (msg.t) {
+    case "create": {
+      if (room) return;
+      const r = makeRoom(ws, String(msg.name || "Player"), msg.opts);
+      send(ws, { t: "joined", code: r.code });
+      pushState(r);
+      return;
+    }
+    case "join": {
+      if (room) return;
+      const r = rooms.get(String(msg.code || "").toUpperCase());
+      if (!r) return send(ws, { t: "error", msg: "Room not found." });
+      if (r.phase !== "lobby") {
+        // allow rejoin by name if that seat is disconnected
+        const seat = r.players.find(p => !p.bot && !p.connected && p.name === String(msg.name || "").slice(0, 16));
+        if (seat) {
+          seat.connected = true; seat.ws = ws;
+          ws._room = r; ws._player = seat;
+          send(ws, { t: "joined", code: r.code });
+          logMsg(r, `${seat.name} reconnected.`);
+          pushState(r);
+          return;
+        }
+        return send(ws, { t: "error", msg: "Game already in progress." });
+      }
+      if (r.players.filter(p => !p.bot).length >= 6) return send(ws, { t: "error", msg: "Room full (6 players max)." });
+      const p = addHuman(r, ws, String(msg.name || "Player"));
+      send(ws, { t: "joined", code: r.code });
+      logMsg(r, `${p.name} joined the room.`);
+      pushState(r);
+      return;
+    }
+  }
+
+  if (!room || !me) return;
+
+  switch (msg.t) {
+    case "opts": {
+      if (!isHost(room, me) || room.phase === "playing") return;
+      room.opts = sanitizeOpts(msg.opts);
+      pushState(room);
+      return;
+    }
+    case "start": {
+      if (!isHost(room, me)) return send(ws, { t: "error", msg: "Only the host can start." });
+      if (room.phase === "playing") return;
+      startGame(room);
+      return;
+    }
+    case "chat": {
+      const text = String(msg.text || "").slice(0, 300).trim();
+      if (text) { chatMsg(room, me.name, text); bump("chatMessages"); }
+      return;
+    }
+    case "play": {
+      if (room.phase !== "playing" || room.busy || currentPlayer(room) !== me) return;
+      const zone = activeZone(me);
+      if (!zone || zone === "faceDown") return;
+      const src = me[zone];
+      const idxs = [...new Set((msg.idxs || []).map(Number))].filter(i => Number.isInteger(i) && i >= 0 && i < src.length);
+      if (idxs.length === 0) return;
+      const rank = src[idxs[0]].rank;
+      if (!idxs.every(i => src[i].rank === rank)) return send(ws, { t: "error", msg: "Cards must be the same rank." });
+      if (!canPlayRank(room, rank)) return send(ws, { t: "error", msg: "That card can't be played." });
+      idxs.sort((a, b) => b - a);
+      const cards = idxs.map(i => src[i]).reverse();
+      for (const i of idxs) src.splice(i, 1);
+      const res = resolvePlay(room, cards);
+      logMsg(room, `${me.name} plays ${cards.map(cardName).join(" ")}${res.burned ? " — pile overdosed!" : ""}`);
+      finishPlay(room, me, res);
+      return;
+    }
+    case "flip": {
+      if (room.phase !== "playing" || room.busy || currentPlayer(room) !== me) return;
+      if (activeZone(me) !== "faceDown") return;
+      const i = Number(msg.idx);
+      if (!Number.isInteger(i) || i < 0 || i >= me.faceDown.length) return;
+      flipFaceDown(room, me, i);
+      return;
+    }
+    case "pickup": {
+      if (room.phase !== "playing" || room.busy || currentPlayer(room) !== me) return;
+      if (room.pile.length === 0) return;
+      pickUpPile(room, me);
+      logMsg(room, `${me.name} picks up the pile.`);
+      advanceTurn(room);
+      return;
+    }
+    case "again": {
+      if (!isHost(room, me) || room.phase !== "over") return;
+      room.phase = "lobby";
+      pushState(room);
+      return;
+    }
+  }
+}
+
+server.listen(PORT, () => {
+  console.log(`Drugs server running → http://localhost:${PORT}`);
+});
