@@ -20,21 +20,27 @@
 
 ## Next up 🚧
 
-- [ ] **Sound effects** — card plays, pile pickup, overdose, win/lose, "your turn" ding (with mute toggle)
 - [ ] **Your-turn browser notification** — so tabbed-away players don't stall the game
+- [ ] Port the v1.3.0 presentation layer to the solo `index.html` (currently multiplayer-only)
 - [ ] **Mobile portrait layout** — someone is always on a phone
 - [ ] **Series scoring** — traditional style: track the loser of each hand ("the Drugs") across a room session, with a scoreboard
 
-## Presentation v2 🎬
+## Presentation v2 🎬 — shipped in v1.3.0
 
-Make plays impactful, suspenseful, and funny:
+- [x] **Suspense on blind flips** — full-screen stage, drumroll, tension wobble, 3D flip, SAFE/BUSTED stamp
+- [x] **Big-moment effects** — screen shake, particle explosion + shockwave on kills, OVERDOSE/BURNED/REVERSE banners
+- [x] **Comedic flavour** — randomised commentary toasts ("{who} eats {n} cards. Ouch."), sad trombone on busted flips
+- [x] **Cards fly from player positions** — plays animate from the player's seat onto the pile with an impact pop
+- [x] **Emotes / quick reactions** — 8 one-tap emotes that float over the sender's seat
+- [x] **Table themes** — classic / midnight / crimson / void, remembered per browser
+- [x] **Sound effects** — fully synthesised (no asset files), with a mute toggle
+- [x] **Your-turn ding** — audio cue + toast when your turn starts
 
-- [ ] **Suspense on blind flips** — slow card flip, drumroll, dramatic pause before revealing legal/illegal
-- [ ] **Big-moment effects** — screen shake + explosion on overdose, slow-mo on a game-winning card, dramatic zoom when someone is forced to pick up a huge pile
-- [ ] **Comedic flavour** — commentary lines/toasts for events ("Bob eats 23 cards. Ouch."), sad trombone on illegal flips, taunt when a 7 traps someone
-- [ ] **Cards fly from player positions** — plays and pickups animate to/from the right seat
-- [ ] **Emotes / quick reactions** — one-tap laugh/cry/rage bubbles over your seat
-- [ ] **Table themes** — felt colours, deck backs
+Still open:
+
+- [ ] Slow-motion / dramatic zoom on the game-winning card
+- [ ] Pickup animation — cards fly from the pile *to* the player who ate them
+- [ ] Deck-back designs per theme
 
 ## Chaos mode 🃏 (direction 1, scoped small)
 

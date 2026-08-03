@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ADMIN_KEY = process.env.ADMIN_KEY || "drugs-admin";
-const REVEAL_MS = 1600;
+const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
 
@@ -186,15 +186,25 @@ function drawUp(room, p) {
 }
 function sortHand(p) { p.hand.sort((a, b) => a.rank - b.rank); }
 
-function resolvePlay(room, cards) {
+function resolvePlay(room, cards, actor) {
+  const blind = !!(actor && actor._blind);
   for (const c of cards) room.pile.push(c);
   // each Jack flips the turn order (a pair cancels out)
   let reversed = false;
   for (const c of cards) if (c.rank === 11) { room.direction *= -1; reversed = !reversed; bump("reversals"); }
-  if (reversed) logMsg(room, "Jack — play order reversed!");
   bump("cardsPlayed", cards.length);
   for (const c of cards) bumpMap("byRank", c.rank);
+
+  if (actor && !blind) {
+    fx(room, "play", { whoId: actor.id, who: actor.name, cards });
+  }
+  if (reversed) {
+    logMsg(room, "Jack — play order reversed!");
+    fx(room, "reverse", { who: actor ? actor.name : "Someone" });
+  }
+
   let burned = cards[0].rank === 10;
+  let overdose = false;
   const eff = effectiveTop(room);
 
   if (!burned && room.opts.burn > 0 && room.pile.length >= room.opts.burn) {
@@ -203,23 +213,33 @@ function resolvePlay(room, cards) {
     if (r0 !== 3) {
       let run = 1;
       while (run < n && room.pile[n - 1 - run].rank === r0) run++;
-      if (run >= room.opts.burn) { burned = true; bump("overdoses"); }
+      if (run >= room.opts.burn) { burned = true; overdose = true; bump("overdoses"); }
     }
   }
 
   if (burned) {
     bump("pilesBurned");
+    fx(room, "burn", {
+      who: actor ? actor.name : "Someone",
+      whoId: actor ? actor.id : null,
+      overdose,
+      n: room.pile.length,
+      rank: cards[cards.length - 1].rank,
+    });
     room.pile = [];
     room.sevenActive = false;
     return { burned: true, goAgain: true };
   }
   room.sevenActive = (eff === 7);
+  if (room.sevenActive) fx(room, "seven", { who: actor ? actor.name : "Someone" });
   return { burned: false, goAgain: false };
 }
 
 function pickUpPile(room, p) {
+  const n = room.pile.length;
   bump("pilePickups");
-  bump("cardsPickedUp", room.pile.length);
+  bump("cardsPickedUp", n);
+  fx(room, "pickup", { whoId: p.id, who: p.name, n });
   p.hand.push(...room.pile);
   room.pile = [];
   room.sevenActive = false;
@@ -293,6 +313,11 @@ function chatMsg(room, from, text) {
 function logMsg(room, text) {
   broadcast(room, { t: "log", text });
 }
+/* Presentation events — the client turns these into sounds, toasts and effects.
+ * Purely cosmetic: the authoritative state still arrives via pushState. */
+function fx(room, kind, data) {
+  broadcast(room, Object.assign({ t: "fx", kind }, data));
+}
 
 /* Per-player view of the room */
 function viewFor(room, me) {
@@ -333,7 +358,6 @@ function pushState(room, reveal) {
 
 /* ================= Game flow ================= */
 function startGame(room) {
-  room.deck = makeDeck(room.opts.decks);
   room.pile = [];
   room.direction = 1;
   room.sevenActive = false;
@@ -344,6 +368,16 @@ function startGame(room) {
   room.players = room.players.filter(p => !p.bot);
   for (let i = 1; i <= room.opts.bots; i++)
     room.players.push({ id: nextPlayerId++, name: "Bot " + i, ws: null, bot: true, connected: true, hand: [], faceUp: [], faceDown: [] });
+
+  // Every player needs 9 cards, so a big table needs more than one deck —
+  // otherwise the last seats get dealt nothing at all.
+  const needed = room.players.length * 9;
+  const minDecks = Math.ceil((needed + 4) / 52);   // +4 so the draw pile isn't empty from the off
+  if (room.opts.decks < minDecks) {
+    logMsg(room, `${room.players.length} players need ${needed} cards — using ${minDecks} decks.`);
+    room.opts.decks = minDecks;
+  }
+  room.deck = makeDeck(room.opts.decks);
 
   for (const p of room.players) {
     p.hand = []; p.faceUp = []; p.faceDown = [];
@@ -400,7 +434,7 @@ function endGame(room, winner) {
   bumpMap("wins", winner.name);
   setImmediate(checkDrainDone);
   logMsg(room, `${winner.name} wins!`);
-  broadcast(room, { t: "gameover", winner: winner.name });
+  broadcast(room, { t: "gameover", winner: winner.name, winnerId: winner.id });
   pushState(room);
 }
 
@@ -411,12 +445,14 @@ function flipFaceDown(room, p, idx) {
   bump("blindFlips");
   if (!ok) bump("blindFails");
   room.busy = true;
-  pushState(room, { card, ok, who: p.name });
+  pushState(room, { card, ok, who: p.name, whoId: p.id });
   clearTimeout(room.timer);
   room.timer = setTimeout(() => {
     room.busy = false;
     if (ok) {
-      const res = resolvePlay(room, [card]);
+      p._blind = true;                       // the flip was already dramatized
+      const res = resolvePlay(room, [card], p);
+      p._blind = false;
       logMsg(room, `${p.name} blind-plays ${cardName(card)}${res.burned ? " — pile overdosed!" : ""}`);
       finishPlay(room, p, res);
     } else {
@@ -454,7 +490,7 @@ function botMove(room, p) {
   const idxs = legal.filter(i => src[i].rank === choiceRank);
   const cards = idxs.map(i => src[i]);
   for (let k = idxs.length - 1; k >= 0; k--) src.splice(idxs[k], 1);
-  const res = resolvePlay(room, cards);
+  const res = resolvePlay(room, cards, p);
   logMsg(room, `${p.name} plays ${cards.map(cardName).join(" ")}${res.burned ? " — pile overdosed!" : ""}`);
   finishPlay(room, p, res);
 }
@@ -567,6 +603,15 @@ function handle(ws, msg) {
       if (text) { chatMsg(room, me.name, text); bump("chatMessages"); }
       return;
     }
+    case "emote": {
+      const EMOTES = ["😂", "😭", "😡", "😎", "🤯", "🍻", "🤡", "💀"];
+      if (!EMOTES.includes(msg.e)) return;
+      const now = Date.now();
+      if (me._lastEmote && now - me._lastEmote < 800) return;   // rate limit
+      me._lastEmote = now;
+      fx(room, "emote", { whoId: me.id, who: me.name, e: msg.e });
+      return;
+    }
     case "play": {
       if (room.phase !== "playing" || room.busy || currentPlayer(room) !== me) return;
       const zone = activeZone(me);
@@ -580,7 +625,7 @@ function handle(ws, msg) {
       idxs.sort((a, b) => b - a);
       const cards = idxs.map(i => src[i]).reverse();
       for (const i of idxs) src.splice(i, 1);
-      const res = resolvePlay(room, cards);
+      const res = resolvePlay(room, cards, me);
       logMsg(room, `${me.name} plays ${cards.map(cardName).join(" ")}${res.burned ? " — pile overdosed!" : ""}`);
       finishPlay(room, me, res);
       return;

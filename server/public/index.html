@@ -212,14 +212,6 @@
     font-size: .7rem; opacity: .45;
     z-index: 5;
   }
-  #help-btn {
-    position: fixed; right: 278px; bottom: 14px;
-    width: 42px; height: 42px; padding: 0;
-    border-radius: 50%; font-size: 1.3rem;
-    display: none;
-    z-index: 5;
-  }
-  #help-btn.show { display: block; }
   #rules .panel { max-width: 560px; max-height: 86vh; overflow-y: auto; align-items: flex-start; gap: 10px; }
   #rules h2 { align-self: center; }
   #rules h4 { margin-top: 8px; color: #ffd54a; }
@@ -248,6 +240,203 @@
     100% { transform: scale(1); opacity: 1; }
   }
   .reveal-anim { animation: revealpop .25s ease; }
+
+  /* ==================== PRESENTATION V2 ==================== */
+
+  /* screen shake */
+  @keyframes shakeS { 10%,90%{transform:translate(-1px,0)} 30%,70%{transform:translate(2px,-1px)} 50%{transform:translate(-2px,1px)} }
+  @keyframes shakeL {
+    0%,100%{transform:translate(0,0) rotate(0)}
+    10%{transform:translate(-9px,4px) rotate(-.6deg)}
+    25%{transform:translate(8px,-6px) rotate(.5deg)}
+    40%{transform:translate(-7px,-3px) rotate(-.4deg)}
+    55%{transform:translate(6px,5px) rotate(.4deg)}
+    70%{transform:translate(-4px,-2px) rotate(-.2deg)}
+    85%{transform:translate(3px,1px) rotate(.1deg)}
+  }
+  body.shake-s { animation: shakeS .25s ease; }
+  body.shake-l { animation: shakeL .7s cubic-bezier(.36,.07,.19,.97); }
+
+  /* fx layer — particles, banners, flying cards */
+  #fx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 40; overflow: hidden; }
+  .particle {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    will-change: transform, opacity;
+  }
+  @keyframes flyout {
+    0% { transform: translate(0,0) scale(1); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; }
+  }
+  .particle.go { animation: flyout var(--dur) cubic-bezier(.16,.8,.3,1) forwards; }
+
+  @keyframes shockwave {
+    0% { transform: scale(.2); opacity: .85; border-width: 14px; }
+    100% { transform: scale(3.4); opacity: 0; border-width: 1px; }
+  }
+  .shockwave {
+    position: absolute; width: 150px; height: 150px; border-radius: 50%;
+    border: 10px solid #ffb300; margin: -75px 0 0 -75px;
+    animation: shockwave .7s ease-out forwards;
+  }
+
+  /* big banner (OVERDOSE! etc) */
+  @keyframes bannerIn {
+    0% { transform: scale(2.6) rotate(-9deg); opacity: 0; filter: blur(6px); }
+    35% { transform: scale(1) rotate(-3deg); opacity: 1; filter: blur(0); }
+    75% { transform: scale(1) rotate(-3deg); opacity: 1; }
+    100% { transform: scale(1.5) rotate(-3deg); opacity: 0; }
+  }
+  #banner-slot {
+    position: fixed; top: 34%; left: 0; right: 0;
+    display: flex; justify-content: center;
+    pointer-events: none; z-index: 45;
+  }
+  .banner {
+    font-size: clamp(2rem, 8vw, 4.6rem);
+    font-weight: 900; letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 0 18px rgba(255,120,0,.9), 0 6px 0 #7a2d00, 0 10px 26px rgba(0,0,0,.7);
+    animation: bannerIn 1.5s ease forwards;
+    white-space: nowrap;
+  }
+  .banner.cool { text-shadow: 0 0 18px rgba(90,170,255,.9), 0 6px 0 #123a6b, 0 10px 26px rgba(0,0,0,.7); }
+  .banner.win  { text-shadow: 0 0 22px rgba(255,213,74,.95), 0 6px 0 #7a5c00, 0 10px 26px rgba(0,0,0,.7); }
+
+  /* commentary toasts */
+  #toast-slot {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 74px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    pointer-events: none; z-index: 44; width: max-content; max-width: 90vw;
+  }
+  @keyframes toastIn {
+    0% { transform: translateY(14px) scale(.9); opacity: 0; }
+    12% { transform: translateY(0) scale(1); opacity: 1; }
+    82% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-8px) scale(.97); opacity: 0; }
+  }
+  .toast {
+    background: rgba(10,10,10,.86);
+    border: 1px solid rgba(255,255,255,.16);
+    border-left: 4px solid #ffd54a;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: .95rem; font-weight: 600;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
+    animation: toastIn 3.4s ease forwards;
+    text-align: center;
+  }
+  .toast.bad { border-left-color: #e53935; }
+  .toast.good { border-left-color: #4caf50; }
+  .toast.big { font-size: 1.15rem; }
+
+  /* flying card */
+  .fly-card {
+    position: fixed; z-index: 42; pointer-events: none;
+    width: var(--card-w); height: var(--card-h);
+    border-radius: 8px; overflow: hidden;
+    box-shadow: 0 10px 24px rgba(0,0,0,.55);
+    transition: transform .42s cubic-bezier(.35,.9,.3,1), opacity .42s ease;
+  }
+  @keyframes impactpop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.16); }
+    100% { transform: scale(1); }
+  }
+  .impact { animation: impactpop .28s ease; }
+
+  /* ---- blind-flip suspense stage ---- */
+  #reveal-stage {
+    position: fixed; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 43; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.55) 0%, rgba(0,0,0,.82) 100%);
+  }
+  #reveal-stage.show { display: flex; }
+  .stage-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .stage-title { font-size: 1rem; letter-spacing: 3px; text-transform: uppercase; opacity: .85; }
+  .flipper {
+    width: calc(var(--card-w) * 1.9); height: calc(var(--card-h) * 1.9);
+    position: relative; transform-style: preserve-3d;
+    transition: transform .5s cubic-bezier(.4,1.4,.5,1);
+  }
+  .flipper.flipped { transform: rotateY(180deg); }
+  .flipper .face {
+    position: absolute; inset: 0;
+    backface-visibility: hidden;
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 14px 40px rgba(0,0,0,.7);
+  }
+  .flipper .face svg { width: 100%; height: 100%; display: block; }
+  .flipper .front { transform: rotateY(180deg); }
+  @keyframes tension {
+    0%,100% { transform: translate(0,0) rotate(0) scale(1); }
+    20% { transform: translate(-3px,1px) rotate(-1.4deg) scale(1.01); }
+    45% { transform: translate(3px,-2px) rotate(1.6deg) scale(1.02); }
+    70% { transform: translate(-2px,2px) rotate(-1deg) scale(1.01); }
+  }
+  .flipper.tense { animation: tension .34s ease-in-out infinite; }
+  @keyframes stampIn {
+    0% { transform: scale(3) rotate(-24deg); opacity: 0; }
+    45% { transform: scale(1) rotate(-11deg); opacity: 1; }
+    100% { transform: scale(1) rotate(-11deg); opacity: 1; }
+  }
+  .verdict {
+    font-size: clamp(1.8rem, 6vw, 3.2rem); font-weight: 900;
+    letter-spacing: 5px; padding: 4px 22px;
+    border: 5px solid currentColor; border-radius: 10px;
+    animation: stampIn .35s ease forwards;
+    text-transform: uppercase;
+  }
+  .verdict.safe { color: #7bed8f; text-shadow: 0 0 16px rgba(60,220,110,.6); }
+  .verdict.bust { color: #ff5f56; text-shadow: 0 0 16px rgba(255,60,50,.6); }
+
+  /* ---- emotes ---- */
+  #emote-bar {
+    position: fixed; left: 10px; bottom: 34px;
+    display: none; gap: 4px; z-index: 6;
+  }
+  #emote-bar.show { display: flex; }
+  #emote-bar button {
+    width: 34px; height: 34px; padding: 0;
+    font-size: 1.1rem; border-radius: 50%;
+    background: rgba(0,0,0,.4); color: #fff;
+    box-shadow: none; border: 1px solid rgba(255,255,255,.18);
+  }
+  #emote-bar button:hover { background: rgba(255,213,74,.35); }
+  @keyframes emoteFloat {
+    0% { transform: translate(-50%, 0) scale(.5); opacity: 0; }
+    18% { transform: translate(-50%, -14px) scale(1.25); opacity: 1; }
+    75% { transform: translate(-50%, -34px) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -60px) scale(.9); opacity: 0; }
+  }
+  .emote-bubble {
+    position: fixed; z-index: 44; pointer-events: none;
+    font-size: 2.2rem;
+    animation: emoteFloat 2s ease forwards;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,.6));
+  }
+
+  /* ---- tool buttons ---- */
+  #tools {
+    position: fixed; right: 278px; bottom: 14px;
+    display: none; gap: 8px; z-index: 6;
+  }
+  #tools.show { display: flex; }
+  #tools button {
+    width: 42px; height: 42px; padding: 0;
+    border-radius: 50%; font-size: 1.15rem;
+  }
+  #tools button.off { opacity: .5; }
+
+  /* ---- table themes ---- */
+  body.theme-classic  { --felt: #1e5c3a; --felt-dark: #14432a; }
+  body.theme-midnight { --felt: #26407a; --felt-dark: #0e1730; }
+  body.theme-crimson  { --felt: #6d2431; --felt-dark: #2b0c13; }
+  body.theme-void     { --felt: #33333d; --felt-dark: #121216; }
+
   #log {
     font-size: .7rem; opacity: .6;
     max-width: 640px; max-height: 52px;
@@ -315,8 +504,30 @@
   </div>
 </div>
 
-<button id="help-btn" class="secondary" onclick="toggleRules(true)" title="Rules">?</button>
-<span id="version-tag">v1.2.0</span>
+<div id="tools">
+  <button id="sound-btn" class="secondary" onclick="toggleSound()" title="Sound on/off">🔊</button>
+  <button id="theme-btn" class="secondary" onclick="cycleTheme()" title="Table theme">🎨</button>
+  <button id="help-btn" class="secondary" onclick="toggleRules(true)" title="Rules">?</button>
+</div>
+
+<div id="emote-bar"></div>
+
+<!-- presentation layers -->
+<div id="fx-layer"></div>
+<div id="banner-slot"></div>
+<div id="toast-slot"></div>
+<div id="reveal-stage">
+  <div class="stage-wrap">
+    <div class="stage-title" id="stage-title"></div>
+    <div class="flipper" id="flipper">
+      <div class="face back" id="flip-back"></div>
+      <div class="face front" id="flip-front"></div>
+    </div>
+    <div id="verdict-slot" style="min-height:60px; display:flex; align-items:center;"></div>
+  </div>
+</div>
+
+<span id="version-tag">v1.3.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -391,7 +602,7 @@
 "use strict";
 /* ============ Sprites & helpers (same as solo) ============ */
 const RANK_LABEL = r => ({11:"J",12:"Q",13:"K",14:"A"}[r] || String(r));
-const REVEAL_MS = 1600;
+const REVEAL_MS = 2900;   // must match the server's reveal pause
 
 function cardSVG(card) {
   const red = card.suit === "♥" || card.suit === "♦";
@@ -424,6 +635,377 @@ function cardEl(card, faceUp = true) {
   return div;
 }
 
+/* ==================================================================
+   PRESENTATION V2 — sound, commentary, effects
+   All audio is synthesised with WebAudio so there are no asset files
+   to ship or cache-bust.
+   ================================================================== */
+const sfx = (() => {
+  let ctx = null, master = null, noiseBuf = null;
+  let on = localStorage.getItem("drugsSound") !== "off";
+
+  function ensure() {
+    if (!on) return null;
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.45;
+      master.connect(ctx.destination);
+      const len = Math.floor(ctx.sampleRate * 1.5);
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  function tone({ f = 440, to = null, dur = .2, type = "sine", gain = .3, delay = 0 }) {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + delay;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (to) o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + Math.min(.02, dur / 4));
+    g.gain.exponentialRampToValueAtTime(.0008, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + .02);
+  }
+
+  function noise({ dur = .2, f = 1200, to = null, q = 1, type = "bandpass", gain = .3, delay = 0 }) {
+    const c = ensure(); if (!c) return;
+    const t = c.currentTime + delay;
+    const s = c.createBufferSource(); s.buffer = noiseBuf;
+    s.loop = true;
+    const filt = c.createBiquadFilter();
+    filt.type = type; filt.Q.value = q;
+    filt.frequency.setValueAtTime(f, t);
+    if (to) filt.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + .012);
+    g.gain.exponentialRampToValueAtTime(.0008, t + dur);
+    s.connect(filt); filt.connect(g); g.connect(master);
+    s.start(t); s.stop(t + dur + .02);
+  }
+
+  return {
+    isOn: () => on,
+    toggle() {
+      on = !on;
+      localStorage.setItem("drugsSound", on ? "on" : "off");
+      if (on) { ensure(); this.card(); }
+      return on;
+    },
+    unlock() { ensure(); },
+    card() { noise({ dur: .1, f: 2600, to: 700, q: .8, gain: .32 }); },
+    deal() { for (let i = 0; i < 5; i++) noise({ dur: .08, f: 2400, to: 800, gain: .18, delay: i * .09 }); },
+    whoosh() { noise({ dur: .38, f: 260, to: 2600, q: .7, gain: .3 }); },
+    slurp() { noise({ dur: .5, f: 1800, to: 200, q: 1.2, gain: .34 }); },
+    ding() { tone({ f: 880, dur: .13, type: "sine", gain: .3 }); tone({ f: 1320, dur: .3, type: "sine", gain: .22, delay: .1 }); },
+    reverse() { tone({ f: 300, to: 900, dur: .16, type: "square", gain: .2 }); tone({ f: 900, to: 300, dur: .22, type: "square", gain: .2, delay: .16 }); },
+    drumroll(seconds = 1.1) {
+      const hits = 26;
+      for (let i = 0; i < hits; i++) {
+        const p = i / hits;
+        noise({ dur: .05, f: 220, to: 130, type: "lowpass", q: .6, gain: .1 + .22 * p, delay: p * p * seconds });
+      }
+    },
+    explosion() {
+      noise({ dur: .75, f: 900, to: 60, type: "lowpass", q: .9, gain: .6 });
+      tone({ f: 90, to: 32, dur: .6, type: "sawtooth", gain: .35 });
+      noise({ dur: .3, f: 5200, to: 1600, q: .5, gain: .22, delay: .02 });
+    },
+    trombone() {
+      const notes = [[392, 370, 0], [370, 330, .22], [330, 190, .44]];
+      for (const [f, to, d] of notes) tone({ f, to, dur: .3, type: "sawtooth", gain: .26, delay: d });
+    },
+    fanfare() {
+      [523, 659, 784, 1047].forEach((f, i) => tone({ f, dur: .34, type: "triangle", gain: .26, delay: i * .11 }));
+    },
+    sad() {
+      [440, 392, 330, 262].forEach((f, i) => tone({ f, dur: .34, type: "triangle", gain: .22, delay: i * .13 }));
+    },
+    pop() { tone({ f: 620, to: 1100, dur: .1, type: "triangle", gain: .22 }); },
+  };
+})();
+
+function toggleSound() {
+  const on = sfx.toggle();
+  const b = document.getElementById("sound-btn");
+  b.textContent = on ? "🔊" : "🔇";
+  b.classList.toggle("off", !on);
+}
+
+/* ---- table themes ---- */
+const THEMES = ["classic", "midnight", "crimson", "void"];
+function applyTheme(name) {
+  document.body.classList.remove(...THEMES.map(t => "theme-" + t));
+  document.body.classList.add("theme-" + name);
+  localStorage.setItem("drugsTheme", name);
+}
+function cycleTheme() {
+  const cur = localStorage.getItem("drugsTheme") || "classic";
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  applyTheme(next);
+  sfx.pop();
+  toast("Table: " + next);
+}
+
+/* ---- commentary ---- */
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const LINES = {
+  bigPickup: [
+    "{who} eats {n} cards. Ouch.",
+    "{who} takes the whole buffet — {n} cards.",
+    "{n} cards. {who} now holds a small library.",
+    "Absolute carnage. {who} +{n}.",
+    "{who} has been thoroughly punished: {n} cards.",
+  ],
+  pickup: [
+    "{who} picks up {n}.",
+    "{who} takes {n} on the chin.",
+    "{n} cards for {who}. Unlucky.",
+  ],
+  ten: [
+    "{who} drops a 10 — pile incinerated!",
+    "10! Gone without a trace.",
+    "{who} wipes the table clean.",
+  ],
+  overdose: [
+    "{n} of a kind — the pile could not handle it.",
+    "{who} triggers an OVERDOSE!",
+    "Too much of a good thing. Pile dead.",
+  ],
+  bust: [
+    "{who} gambled and lost.",
+    "Bad flip, {who}.",
+    "{who} should not be allowed near cards.",
+    "That was a choice, {who}.",
+  ],
+  safe: [
+    "{who} gets away with it.",
+    "Lucky. {who} survives.",
+    "{who} flips it with zero skill involved.",
+  ],
+  reverse: [
+    "{who} flips the whole table around.",
+    "Jack! Everyone turn around.",
+    "Order reversed. Blame {who}.",
+  ],
+  seven: ["A 7 lands — the next player is capped at 7 or lower."],
+  win: ["{who} wins. Everyone else is on drugs.", "{who} takes it. Shameful scenes.", "Winner: {who}."],
+};
+const fill = (tpl, d) => tpl.replace(/\{(\w+)\}/g, (_, k) => d[k] != null ? d[k] : "");
+
+function toast(text, cls = "", big = false) {
+  const slot = document.getElementById("toast-slot");
+  const el = document.createElement("div");
+  el.className = "toast " + cls + (big ? " big" : "");
+  el.textContent = text;
+  slot.appendChild(el);
+  while (slot.children.length > 4) slot.removeChild(slot.firstChild);
+  setTimeout(() => el.remove(), 3500);
+}
+function banner(text, cls = "") {
+  const slot = document.getElementById("banner-slot");
+  const el = document.createElement("div");
+  el.className = "banner " + cls;
+  el.textContent = text;
+  slot.appendChild(el);
+  setTimeout(() => el.remove(), 1600);
+}
+function shake(big) {
+  const c = big ? "shake-l" : "shake-s";
+  document.body.classList.remove("shake-s", "shake-l");
+  void document.body.offsetWidth;
+  document.body.classList.add(c);
+  setTimeout(() => document.body.classList.remove(c), big ? 750 : 300);
+}
+
+/* ---- particles ---- */
+function burstAt(x, y, { count = 26, colors = ["#ffb300", "#ff6d00", "#ffe082", "#fff"], spread = 260, dur = .8 } = {}) {
+  const layer = document.getElementById("fx-layer");
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    const size = 6 + Math.random() * 12;
+    const ang = Math.random() * Math.PI * 2;
+    const dist = spread * (.35 + Math.random() * .65);
+    p.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;` +
+      `background:${colors[i % colors.length]};` +
+      `--dx:${Math.cos(ang) * dist}px;--dy:${Math.sin(ang) * dist}px;--dur:${dur + Math.random() * .35}s`;
+    layer.appendChild(p);
+    requestAnimationFrame(() => p.classList.add("go"));
+    setTimeout(() => p.remove(), 1400);
+  }
+  const wave = document.createElement("div");
+  wave.className = "shockwave";
+  wave.style.left = x + "px";
+  wave.style.top = y + "px";
+  layer.appendChild(wave);
+  setTimeout(() => wave.remove(), 750);
+}
+
+/* ---- geometry helpers ---- */
+function seatRect(pid) {
+  const el = (view && pid === view.youId)
+    ? document.getElementById("player-zone")
+    : document.getElementById("seat-" + pid);
+  return el ? el.getBoundingClientRect() : null;
+}
+function pileRect() { return document.getElementById("pile-stack").getBoundingClientRect(); }
+function centerOf(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+
+/* ---- flying cards ---- */
+let flyingHide = [];   // pile card elements hidden until their ghost lands
+function flyCards(fromRect, toRect, cards) {
+  const layer = document.getElementById("fx-layer");
+  const from = centerOf(fromRect), to = centerOf(toRect);
+  const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--card-w")) || 74;
+  const h = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--card-h")) || 104;
+  cards.slice(0, 4).forEach((card, i) => {
+    const el = document.createElement("div");
+    el.className = "fly-card";
+    el.innerHTML = cardSVG(card);
+    const svg = el.firstElementChild;
+    if (svg) { svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%"); }
+    el.style.left = (from.x - w / 2) + "px";
+    el.style.top = (from.y - h / 2) + "px";
+    el.style.transform = `scale(.7) rotate(${-18 + Math.random() * 36}deg)`;
+    layer.appendChild(el);
+    const dx = to.x - from.x + (i * 3), dy = to.y - from.y + (i * 2);
+    requestAnimationFrame(() => {
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(1) rotate(0deg)`;
+    });
+    setTimeout(() => {
+      el.remove();
+      sfx.card();
+      const hidden = flyingHide.shift();
+      if (hidden) hidden.style.opacity = "1";
+      const ps = document.getElementById("pile-stack");
+      ps.classList.remove("impact"); void ps.offsetWidth; ps.classList.add("impact");
+    }, 380 + i * 70);
+  });
+}
+
+/* ---- emotes ---- */
+const EMOTES = ["😂", "😭", "😡", "😎", "🤯", "🍻", "🤡", "💀"];
+function buildEmoteBar() {
+  const bar = document.getElementById("emote-bar");
+  if (bar.children.length) return;
+  for (const e of EMOTES) {
+    const b = document.createElement("button");
+    b.textContent = e;
+    b.title = "Send " + e;
+    b.onclick = () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "emote", e })); };
+    bar.appendChild(b);
+  }
+}
+function showEmote(pid, e) {
+  const r = seatRect(pid);
+  const bub = document.createElement("div");
+  bub.className = "emote-bubble";
+  bub.textContent = e;
+  if (r) {
+    bub.style.left = (r.left + r.width / 2) + "px";
+    bub.style.top = (r.top + 6) + "px";
+  } else {
+    bub.style.left = "50%"; bub.style.top = "40%";
+  }
+  document.getElementById("fx-layer").appendChild(bub);
+  sfx.pop();
+  setTimeout(() => bub.remove(), 2100);
+}
+
+/* ---- blind-flip suspense stage ---- */
+let pendingFly = null;
+function playRevealSequence(rv) {
+  const stage = document.getElementById("reveal-stage");
+  const flipper = document.getElementById("flipper");
+  const front = document.getElementById("flip-front");
+  const back = document.getElementById("flip-back");
+  const title = document.getElementById("stage-title");
+  const verdict = document.getElementById("verdict-slot");
+
+  back.innerHTML = cardBackSVG();
+  front.innerHTML = cardSVG(rv.card);
+  verdict.innerHTML = "";
+  flipper.classList.remove("flipped");
+  flipper.classList.add("tense");
+  title.textContent = `${rv.who} flips a face-down card…`;
+  stage.classList.add("show");
+  sfx.drumroll(1.05);
+
+  // 1150ms of tension, then the flip
+  setTimeout(() => {
+    flipper.classList.remove("tense");
+    flipper.classList.add("flipped");
+    sfx.whoosh();
+  }, 1150);
+
+  // verdict stamp
+  setTimeout(() => {
+    const v = document.createElement("div");
+    v.className = "verdict " + (rv.ok ? "safe" : "bust");
+    v.textContent = rv.ok ? "Safe!" : "Busted!";
+    verdict.appendChild(v);
+    if (rv.ok) {
+      sfx.ding();
+      toast(fill(pick(LINES.safe), { who: rv.who }), "good");
+    } else {
+      sfx.trombone();
+      shake(true);
+      toast(fill(pick(LINES.bust), { who: rv.who }), "bad", true);
+    }
+  }, 1700);
+
+  setTimeout(() => {
+    stage.classList.remove("show");
+    flipper.classList.remove("flipped", "tense");
+  }, REVEAL_MS - 150);
+}
+
+/* ---- fx dispatcher ---- */
+function onFx(msg) {
+  switch (msg.kind) {
+    case "play":
+      pendingFly = { whoId: msg.whoId, cards: msg.cards };
+      break;
+    case "pickup": {
+      sfx.slurp();
+      const big = msg.n >= 10;
+      toast(fill(pick(big ? LINES.bigPickup : LINES.pickup), msg), "bad", big);
+      if (big) { shake(false); banner(msg.n + " cards!", "cool"); }
+      break;
+    }
+    case "burn": {
+      const c = centerOf(pileRect());
+      sfx.explosion();
+      shake(true);
+      burstAt(c.x, c.y, { count: msg.overdose ? 40 : 26, spread: msg.overdose ? 340 : 240 });
+      banner(msg.overdose ? "Overdose!" : "Burned!");
+      toast(fill(pick(msg.overdose ? LINES.overdose : LINES.ten), msg), "good", !!msg.overdose);
+      break;
+    }
+    case "reverse":
+      sfx.reverse();
+      banner("Reverse!", "cool");
+      toast(fill(pick(LINES.reverse), msg), "", false);
+      break;
+    case "seven":
+      toast(LINES.seven[0]);
+      break;
+    case "emote":
+      showEmote(msg.whoId, msg.e);
+      break;
+  }
+}
+
 /* ============ Network ============ */
 let ws;
 let view = null;        // latest server view
@@ -444,7 +1026,9 @@ function connect() {
       case "joined":
         document.getElementById("home").classList.remove("show");
         document.getElementById("chat-col").classList.add("show");
-        document.getElementById("help-btn").classList.add("show");
+        document.getElementById("tools").classList.add("show");
+        document.getElementById("emote-bar").classList.add("show");
+        buildEmoteBar();
         document.getElementById("room-tag").textContent = "· room " + msg.code;
         sysChat("You're in room " + msg.code);
         break;
@@ -452,18 +1036,32 @@ function connect() {
         view = msg.view;
         if (msg.reveal) {
           reveal = msg.reveal;
+          playRevealSequence(reveal);
           clearTimeout(revealTimer);
           revealTimer = setTimeout(() => { reveal = null; render(); }, REVEAL_MS);
         }
         onState();
         break;
+      case "fx": onFx(msg); break;
       case "chat": addChat(msg.from, msg.text); break;
       case "log": log(msg.text); sysChat(msg.text); break;
-      case "gameover":
+      case "gameover": {
+        const iWon = view && msg.winnerId === view.youId;
         document.getElementById("overlay-title").textContent =
-          (view && msg.winner === myName()) ? "🎉 You win!" : `🏆 ${msg.winner} wins!`;
-        document.getElementById("overlay").classList.add("show");
+          iWon ? "🎉 You win!" : `🏆 ${msg.winner} wins!`;
+        banner(iWon ? "You win!" : msg.winner + " wins!", "win");
+        toast(fill(pick(LINES.win), { who: msg.winner }), iWon ? "good" : "", true);
+        if (iWon) {
+          sfx.fanfare();
+          const r = pileRect();
+          burstAt(window.innerWidth / 2, window.innerHeight / 3,
+            { count: 60, spread: 420, dur: 1.1, colors: ["#ffd54a", "#4caf50", "#42a5f5", "#ff7043", "#fff"] });
+        } else {
+          sfx.sad();
+        }
+        setTimeout(() => document.getElementById("overlay").classList.add("show"), 1500);
         break;
+      }
       case "error":
         document.getElementById("err").textContent = msg.msg;
         sysChat("⚠ " + msg.msg);
@@ -554,8 +1152,11 @@ function myZone() {
 function myTurn() { return view.turnId === view.youId && !view.busy && !reveal; }
 
 /* ============ State handling ============ */
+let prevPhase = null;
 function onState() {
   selected = selected.filter(() => false); // clear on every server update
+  if (view.phase === "playing" && prevPhase !== "playing") { sfx.deal(); prevMyTurn = false; }
+  prevPhase = view.phase;
   const lobby = document.getElementById("lobby");
   const over = document.getElementById("overlay");
 
@@ -652,6 +1253,7 @@ function log(msg) {
 
 let prevPileCount = 0;
 let prevTurnId = null;
+let prevMyTurn = false;
 
 function render() {
   if (!view || view.phase === "lobby") return;
@@ -682,6 +1284,8 @@ function render() {
   const isMyTurn = view.phase === "playing" && view.turnId === view.youId && !reveal;
   document.getElementById("player-zone").classList.toggle("my-turn", isMyTurn);
   document.getElementById("status").classList.toggle("my-turn", isMyTurn);
+  if (isMyTurn && !prevMyTurn) { sfx.ding(); toast("Your turn!", "good"); }
+  prevMyTurn = isMyTurn;
 
   // opponents
   const area = document.getElementById("others-area");
@@ -690,6 +1294,7 @@ function render() {
     if (p.id === view.youId) continue;
     const panel = document.createElement("div");
     panel.className = "opp-panel";
+    panel.id = "seat-" + p.id;          // anchor for flying cards + emote bubbles
     if (view.turnId === p.id) panel.classList.add("active-turn");
     if (!p.connected && !p.bot) panel.classList.add("disconnected");
     const label = document.createElement("span");
@@ -727,23 +1332,29 @@ function render() {
 
   const ps = document.getElementById("pile-stack");
   ps.innerHTML = "";
-  if (view.pileCount === 0 && !reveal) {
+  flyingHide = [];
+  // A play arriving with an fx event flies in from the player's seat, so the
+  // landed card is hidden until its ghost touches down.
+  const fly = (pendingFly && pileGrew) ? pendingFly : null;
+  pendingFly = null;
+  if (view.pileCount === 0) {
     ps.innerHTML = `<div class="empty-slot"></div>`;
   } else {
+    const nFlying = fly ? Math.min(fly.cards.length, view.pileTop.length, 4) : 0;
     view.pileTop.forEach((c, i) => {
       const el = cardEl(c, true);
       el.style.left = i * 3 + "px";
       el.style.top = i * 2 + "px";
-      if (pileGrew && i === view.pileTop.length - 1) el.classList.add("card-land");
+      const isFlying = fly && i >= view.pileTop.length - nFlying;
+      if (isFlying) { el.style.opacity = "0"; flyingHide.push(el); }
+      else if (pileGrew && !fly && i === view.pileTop.length - 1) el.classList.add("card-land");
       ps.appendChild(el);
     });
-    if (reveal) {
-      const el = cardEl(reveal.card, true);
-      el.classList.add("reveal-anim");
-      if (!reveal.ok) el.classList.add("reveal-bad");
-      el.style.left = "10px"; el.style.top = "-8px"; el.style.zIndex = 5;
-      ps.appendChild(el);
-    }
+  }
+  if (fly) {
+    const from = seatRect(fly.whoId), to = pileRect();
+    if (from && to) flyCards(from, to, fly.cards);
+    else { flyingHide.forEach(e => e.style.opacity = "1"); flyingHide = []; sfx.card(); }
   }
   const note = document.getElementById("effective-note");
   const topCard = view.pileTop[view.pileTop.length - 1];
@@ -812,6 +1423,18 @@ function renderTableInto(el, faceUp, faceDownCount, isMe, zone, legal) {
 
 document.getElementById("code-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); joinRoom(); } });
 document.getElementById("name-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); createRoom(); } });
+
+/* ---- presentation init ---- */
+applyTheme(localStorage.getItem("drugsTheme") || "classic");
+(function initSoundBtn() {
+  const b = document.getElementById("sound-btn");
+  b.textContent = sfx.isOn() ? "🔊" : "🔇";
+  b.classList.toggle("off", !sfx.isOn());
+})();
+// browsers only allow audio after a gesture
+window.addEventListener("pointerdown", () => sfx.unlock(), { once: true });
+window.addEventListener("keydown", () => sfx.unlock(), { once: true });
+
 connect();
 </script>
 </body>
