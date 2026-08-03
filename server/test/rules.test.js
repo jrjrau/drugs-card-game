@@ -163,6 +163,13 @@ test("a win needs an empty deck and no cards anywhere", () => {
   r.deck = [C(5)];
   assert.strictEqual(R.hasWon(r, p), false, "cards left in the deck means no win yet");
 });
+test("topRunCount counts the identical-rank run on top", () => {
+  assert.strictEqual(R.topRunCount(room([])), 0);
+  assert.strictEqual(R.topRunCount(room([C(9)])), 1);
+  assert.strictEqual(R.topRunCount(room([C(4), C(9, "♠"), C(9, "♥")])), 2);
+  assert.strictEqual(R.topRunCount(room([C(9, "♠"), C(9, "♥"), C(9, "♦")])), 3);
+  assert.strictEqual(R.topRunCount(room([C(9, "♠"), C(4), C(9, "♥")])), 1, "a break resets the run");
+});
 test("a deck has 52 distinct cards per copy", () => {
   assert.strictEqual(R.makeDeck(1).length, 52);
   assert.strictEqual(R.makeDeck(3).length, 156);

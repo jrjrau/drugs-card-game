@@ -292,6 +292,16 @@ function resolvePlay(room, cards, actor) {
   return { burned: false, goAgain: false };
 }
 
+/* Length of the run of identical ranks on top of the pile (drives the ×N badge). */
+function topRunCount(room) {
+  const p = room.pile;
+  if (!p.length) return 0;
+  const r0 = p[p.length - 1].rank;
+  let n = 1;
+  while (n < p.length && p[p.length - 1 - n].rank === r0) n++;
+  return n;
+}
+
 function pickUpPile(room, p) {
   const n = room.pile.length;
   bump("pilePickups");
@@ -388,6 +398,7 @@ function viewFor(room, me) {
     deckCount: room.deck.length,
     pileCount: room.pile.length,
     pileTop: room.pile.slice(-3),
+    topRun: topRunCount(room),
     effectiveTop: effectiveTop(room),
     sevenActive: room.sevenActive,
     direction: room.direction,
@@ -721,6 +732,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  makeDeck, effectiveTop, canPlayRank, resolvePlay, pickUpPile,
+  makeDeck, effectiveTop, canPlayRank, resolvePlay, pickUpPile, topRunCount,
   activeZone, legalIndices, drawUp, hasWon, RANK_LABEL, cardName,
 };

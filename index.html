@@ -137,6 +137,17 @@
   .stepper .val { width: 30px; text-align: center; font-size: 1.3rem; font-weight: 700; }
   .menu-hint { font-size: .75rem; opacity: .6; max-width: 280px; text-align: center; }
 
+  @keyframes runpop { 0%{transform:scale(.3)} 55%{transform:scale(1.35)} 100%{transform:scale(1)} }
+  .run-badge {
+    position: absolute; top: -10px; right: -16px;
+    background: #ffd54a; color: #333;
+    font-weight: 800; font-size: .82rem;
+    padding: 2px 8px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+    z-index: 6;
+    animation: runpop .3s ease;
+  }
+  .run-badge.hot { background: #ff7043; color: #fff; }
   .burn-flash { animation: burnflash .5s ease; }
   @keyframes burnflash {
     0% { box-shadow: 0 0 0 0 rgba(255,140,0,.9); }
@@ -192,7 +203,7 @@
   <button id="menu-btn" class="secondary">Menu</button>
 </div>
 <div id="log"></div>
-<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.5.0 (solo)</span>
+<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.5.1 (solo)</span>
 
 <!-- Game over overlay -->
 <div id="overlay" class="overlay">
@@ -710,6 +721,20 @@ function render() {
       el.style.top = "-8px";
       el.style.zIndex = 5;
       ps.appendChild(el);
+    }
+    // ×N badge for stacked same-rank cards
+    const n = state.pile.length;
+    if (n >= 2) {
+      const r0 = state.pile[n - 1].rank;
+      let run = 1;
+      while (run < n && state.pile[n - 1 - run].rank === r0) run++;
+      if (run >= 2) {
+        const badge = document.createElement("div");
+        badge.className = "run-badge";
+        badge.textContent = "×" + run;
+        if (opts.burn > 0 && run === opts.burn - 1) badge.classList.add("hot");
+        ps.appendChild(badge);
+      }
     }
   }
   const eff = effectiveTop();

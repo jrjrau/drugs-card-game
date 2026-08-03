@@ -396,6 +396,23 @@
   }
   .pile-ghost { animation: ghostpulse 1s ease; }
   .card.mirror-card { box-shadow: 0 2px 5px rgba(0,0,0,.45), 0 0 14px rgba(120,215,255,.55); }
+
+  /* ×N badge for stacked same-rank cards on the pile */
+  @keyframes runpop {
+    0% { transform: scale(.3); }
+    55% { transform: scale(1.35); }
+    100% { transform: scale(1); }
+  }
+  .run-badge {
+    position: absolute; top: -10px; right: -16px;
+    background: #ffd54a; color: #333;
+    font-weight: 800; font-size: .82rem;
+    padding: 2px 8px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+    z-index: 6;
+    animation: runpop .3s ease;
+  }
+  .run-badge.hot { background: #ff7043; color: #fff; }
   @keyframes floatlabel {
     0% { transform: translate(-50%, 12px); opacity: 0; }
     22% { transform: translate(-50%, -8px); opacity: 1; }
@@ -633,7 +650,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.5.0</span>
+<span id="version-tag">v1.5.1</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -1534,6 +1551,7 @@ function log(msg) {
 let prevPileCount = 0;
 let prevTurnId = null;
 let prevMyTurn = false;
+let prevTopRun = 0;
 
 function render() {
   if (!view || view.phase === "lobby") return;
@@ -1640,6 +1658,18 @@ function render() {
     if (from && to) flyCards(from, to, fly.cards);
     else { flyingHide.forEach(e => e.style.opacity = "1"); flyingHide = []; sfx.card(); }
   }
+
+  // ×N badge when identical ranks are stacked on top; "hot" when one more
+  // card of that rank would overdose the pile
+  if (view.pileCount > 0 && view.topRun >= 2) {
+    const badge = document.createElement("div");
+    badge.className = "run-badge";
+    badge.textContent = "×" + view.topRun;
+    if (view.opts.burn > 0 && view.topRun === view.opts.burn - 1) badge.classList.add("hot");
+    if (view.topRun !== prevTopRun) { badge.style.animation = "none"; void badge.offsetWidth; badge.style.animation = ""; }
+    ps.appendChild(badge);
+  }
+  prevTopRun = view.topRun;
   const note = document.getElementById("effective-note");
   const topCard = view.pileTop[view.pileTop.length - 1];
   if (reveal && !reveal.ok) note.textContent = "illegal flip!";
