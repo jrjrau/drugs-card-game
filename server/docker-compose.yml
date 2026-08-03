@@ -9,6 +9,9 @@ services:
       - "3168:3000"
     environment:
       - ADMIN_KEY=change-me-please
+      # - DRAIN_TIMEOUT_MIN=15
+    # let running games finish before the container is replaced (graceful drain)
+    stop_grace_period: 16m
     volumes:
       - ./data:/app/data
     restart: unless-stopped

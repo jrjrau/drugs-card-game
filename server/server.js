@@ -53,7 +53,37 @@ function saveStats() {
   }
 }
 setInterval(saveStats, 10000);
-process.on("SIGTERM", () => { saveStats(); process.exit(0); });
+
+/* ================= Graceful drain =================
+ * On SIGTERM (docker stop / compose up with a new image) we stop accepting
+ * new rooms and new deals, let running games finish, then exit. Needs a
+ * matching stop_grace_period in docker-compose.yml — otherwise Docker
+ * force-kills after 10s anyway. */
+const DRAIN_TIMEOUT_MS = (parseInt(process.env.DRAIN_TIMEOUT_MIN, 10) || 15) * 60 * 1000;
+let draining = false;
+
+function playingRooms() {
+  return [...rooms.values()].filter(r => r.phase === "playing");
+}
+function checkDrainDone() {
+  if (draining && playingRooms().length === 0) {
+    console.log("Drain complete — exiting.");
+    saveStats();
+    process.exit(0);
+  }
+}
+process.on("SIGTERM", () => {
+  if (draining) return;
+  draining = true;
+  const active = playingRooms().length;
+  console.log(`SIGTERM: draining (${active} game(s) running, max wait ${DRAIN_TIMEOUT_MS / 60000} min).`);
+  for (const room of rooms.values()) {
+    logMsg(room, "⚠ Server update pending — current games can finish, but new games can't start.");
+  }
+  checkDrainDone();
+  setInterval(checkDrainDone, 5000);
+  setTimeout(() => { console.log("Drain timeout — exiting."); saveStats(); process.exit(0); }, DRAIN_TIMEOUT_MS);
+});
 process.on("SIGINT", () => { saveStats(); process.exit(0); });
 
 /* ================= Static file server ================= */
@@ -368,6 +398,7 @@ function endGame(room, winner) {
   clearTimeout(room.timer);
   bump("gamesFinished");
   bumpMap("wins", winner.name);
+  setImmediate(checkDrainDone);
   logMsg(room, `${winner.name} wins!`);
   broadcast(room, { t: "gameover", winner: winner.name });
   pushState(room);
@@ -483,6 +514,7 @@ function handle(ws, msg) {
   switch (msg.t) {
     case "create": {
       if (room) return;
+      if (draining) return send(ws, { t: "error", msg: "Server is about to update — try again in a few minutes." });
       const r = makeRoom(ws, String(msg.name || "Player"), msg.opts);
       send(ws, { t: "joined", code: r.code });
       pushState(r);
@@ -525,6 +557,7 @@ function handle(ws, msg) {
     }
     case "start": {
       if (!isHost(room, me)) return send(ws, { t: "error", msg: "Only the host can start." });
+      if (draining) return send(ws, { t: "error", msg: "Server is about to update — new games can't start right now." });
       if (room.phase === "playing") return;
       startGame(room);
       return;
