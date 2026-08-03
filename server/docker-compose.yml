@@ -6,7 +6,7 @@ services:
     # build: .
     container_name: drugs-card-game
     ports:
-      - "3000:3000"
+      - "3168:3000"
     environment:
       - ADMIN_KEY=change-me-please
     volumes:
