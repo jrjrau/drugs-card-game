@@ -109,15 +109,25 @@ test("the 7 cap does not persist past the next play", () => {
   R.resolvePlay(r, [C(6)], actor());
   assert.strictEqual(r.sevenActive, false);
 });
-test("a Jack reverses direction; a pair of Jacks cancels out", () => {
+test("a single Jack reverses the order", () => {
   const r = room([C(9)]);
   R.resolvePlay(r, [C(11)], actor());
   assert.strictEqual(r.direction, -1);
-  R.resolvePlay(r, [C(11, "♥")], actor());
-  assert.strictEqual(r.direction, 1, "second Jack flips back");
-  const r2 = room([C(9)]);
-  R.resolvePlay(r2, [C(11), C(11, "♥")], actor());
-  assert.strictEqual(r2.direction, 1, "a pair played together cancels");
+});
+test("Jacks played in separate turns each reverse", () => {
+  const r = room([C(9)]);
+  R.resolvePlay(r, [C(11)], actor());
+  assert.strictEqual(r.direction, -1);
+  R.resolvePlay(r, [C(11, "♥")], actor("P2"));
+  assert.strictEqual(r.direction, 1, "the next Jack flips it back");
+});
+test("any number of Jacks played together reverses exactly once", () => {
+  for (const count of [2, 3, 4]) {
+    const r = room([C(9)]);
+    const cards = ["♠", "♥", "♦", "♣"].slice(0, count).map(s => C(11, s));
+    R.resolvePlay(r, cards, actor("Bot 1"));
+    assert.strictEqual(r.direction, -1, count + " Jacks together should reverse once");
+  }
 });
 
 console.log("\nPile and progression");

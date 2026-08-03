@@ -33,6 +33,7 @@
 - [x] **Cards fly from player positions** — plays animate from the player's seat onto the pile with an impact pop
 - [x] **Emotes / quick reactions** — 8 one-tap emotes that float over the sender's seat
 - [x] **Table themes** — classic / midnight / crimson / void, remembered per browser
+- [x] **Special-card animations** — 2 fires a shockwave ring with a spinning "0"; 3 gets a glassy shimmer sweep and a "counts as X" label
 - [x] **Sound effects** — fully synthesised (no asset files), with a mute toggle
 - [x] **Your-turn ding** — audio cue + toast when your turn starts
 

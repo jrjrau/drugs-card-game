@@ -197,9 +197,10 @@ function sortHand(p) { p.hand.sort((a, b) => a.rank - b.rank); }
 function resolvePlay(room, cards, actor) {
   const blind = !!(actor && actor._blind);
   for (const c of cards) room.pile.push(c);
-  // each Jack flips the turn order (a pair cancels out)
-  let reversed = false;
-  for (const c of cards) if (c.rank === 11) { room.direction *= -1; reversed = !reversed; bump("reversals"); }
+  // Jacks flip the turn order. Any number played together reverses ONCE, so a
+  // pair still reverses rather than cancelling itself out.
+  const reversed = cards.some(c => c.rank === 11);
+  if (reversed) { room.direction *= -1; bump("reversals"); }
   bump("cardsPlayed", cards.length);
   for (const c of cards) bumpMap("byRank", c.rank);
 
@@ -239,7 +240,11 @@ function resolvePlay(room, cards, actor) {
     return { burned: true, goAgain: true };
   }
   room.sevenActive = (eff === 7);
-  if (room.sevenActive) fx(room, "seven", { who: actor ? actor.name : "Someone" });
+  const who = actor ? actor.name : "Someone";
+  if (room.sevenActive) fx(room, "seven", { who });
+  const topRank = room.pile[room.pile.length - 1].rank;
+  if (topRank === 2) fx(room, "reset", { who });
+  else if (topRank === 3) fx(room, "mirror", { who, mirrors: eff });
   return { burned: false, goAgain: false };
 }
 

@@ -192,7 +192,7 @@
   <button id="menu-btn" class="secondary">Menu</button>
 </div>
 <div id="log"></div>
-<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.3.2 (solo)</span>
+<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.4.0 (solo)</span>
 
 <!-- Game over overlay -->
 <div id="overlay" class="overlay">
@@ -382,10 +382,9 @@ function sortHand(p) { p.hand.sort((a, b) => a.rank - b.rank); }
 /* ============ Play resolution ============ */
 function resolvePlay(player, cards) {
   for (const c of cards) state.pile.push(c);
-  // each Jack flips the turn order (a pair cancels out)
-  let reversed = false;
-  for (const c of cards) if (c.rank === 11) { state.direction *= -1; reversed = !reversed; }
-  if (reversed) log("Jack — play order reversed!");
+  // Jacks flip the turn order; any number played together reverses once
+  const reversed = cards.some(c => c.rank === 11);
+  if (reversed) { state.direction *= -1; log("Jack — play order reversed!"); }
   const played = cards[0].rank;
   let burned = false;
 

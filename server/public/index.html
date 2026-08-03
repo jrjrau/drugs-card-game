@@ -346,6 +346,68 @@
   }
   .impact { animation: impactpop .28s ease; }
 
+  /* ---- 2: reset to zero ---- */
+  @keyframes resetring {
+    0% { transform: scale(.25); opacity: .95; border-width: 12px; }
+    100% { transform: scale(2.8); opacity: 0; border-width: 2px; }
+  }
+  .reset-ring {
+    position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
+    border-radius: 50%; border: 10px solid #4fc3f7;
+    animation: resetring .85s cubic-bezier(.2,.8,.3,1) forwards;
+  }
+  @keyframes zeromark {
+    0% { transform: scale(.2) rotate(-200deg); opacity: 0; }
+    35% { transform: scale(1) rotate(0); opacity: 1; }
+    70% { transform: scale(1) rotate(0); opacity: 1; }
+    100% { transform: scale(1.7) rotate(0); opacity: 0; }
+  }
+  .zero-mark {
+    position: absolute; margin: -46px 0 0 -26px;
+    font-size: 4rem; font-weight: 900; line-height: 1;
+    color: #7fd7ff; text-shadow: 0 0 22px rgba(79,195,247,.95), 0 4px 10px rgba(0,0,0,.6);
+    animation: zeromark 1.05s ease forwards;
+  }
+  @keyframes resetflash {
+    0%, 100% { filter: none; }
+    45% { filter: brightness(1.8) saturate(.15) hue-rotate(165deg); }
+  }
+  .pile-reset { animation: resetflash .7s ease; }
+
+  /* ---- 3: transparent / mirror ---- */
+  @keyframes glasssweep {
+    0% { transform: translateX(-130%) skewX(-18deg); opacity: 0; }
+    22% { opacity: .95; }
+    100% { transform: translateX(240%) skewX(-18deg); opacity: 0; }
+  }
+  .sweep-clip {
+    position: absolute; overflow: hidden;
+    border-radius: 8px; pointer-events: none;
+  }
+  .sweep-clip .bar {
+    position: absolute; top: -25%; left: 0;
+    width: 55%; height: 150%;
+    background: linear-gradient(90deg, transparent, rgba(210,245,255,.9), transparent);
+    animation: glasssweep 1s ease forwards;
+  }
+  @keyframes ghostpulse {
+    0%, 100% { opacity: 1; }
+    45% { opacity: .32; }
+  }
+  .pile-ghost { animation: ghostpulse 1s ease; }
+  @keyframes floatlabel {
+    0% { transform: translate(-50%, 12px); opacity: 0; }
+    22% { transform: translate(-50%, -8px); opacity: 1; }
+    75% { transform: translate(-50%, -26px); opacity: 1; }
+    100% { transform: translate(-50%, -46px); opacity: 0; }
+  }
+  .mirror-label {
+    position: absolute; white-space: nowrap;
+    font-size: 1.05rem; font-weight: 800; color: #cdefff;
+    text-shadow: 0 0 12px rgba(120,210,255,.8), 0 2px 8px rgba(0,0,0,.85);
+    animation: floatlabel 1.6s ease forwards;
+  }
+
   /* ---- blind-flip suspense stage ---- */
   #reveal-stage {
     position: fixed; inset: 0;
@@ -527,7 +589,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.3.2</span>
+<span id="version-tag">v1.4.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -549,7 +611,7 @@
       <li><b>3</b> — transparent: it counts as whatever card is underneath. Play it on anything.</li>
       <li><b>7</b> — the <b>next player only</b> must play 7 or lower (2, 3 and 10 still work).</li>
       <li><b>10</b> — kills the pile and you go again. Play it on anything.</li>
-      <li><b>J</b> — reverses the play order (until the next Jack). Must be played legally like a normal card; a pair of Jacks cancels out.</li>
+      <li><b>J</b> — reverses the play order (until the next Jack). Must be played legally like a normal card; playing several Jacks at once still reverses just once.</li>
     </ul>
     <h4>Overdose</h4>
     <p>If the configured number of same-rank cards (default 4) pile up in a row on top, the pile overdoses — it's killed like a 10 and the player who completed it goes again.</p>
@@ -732,6 +794,15 @@ const sfx = (() => {
       [440, 392, 330, 262].forEach((f, i) => tone({ f, dur: .34, type: "triangle", gain: .22, delay: i * .13 }));
     },
     pop() { tone({ f: 620, to: 1100, dur: .1, type: "triangle", gain: .22 }); },
+    reset() {                                   // 2: wind the pile back to zero
+      tone({ f: 950, to: 160, dur: .42, type: "sawtooth", gain: .22 });
+      noise({ dur: .3, f: 500, to: 120, type: "lowpass", q: .7, gain: .26, delay: .04 });
+      tone({ f: 220, dur: .22, type: "sine", gain: .2, delay: .34 });
+    },
+    shimmer() {                                 // 3: glassy, transparent
+      [1568, 2093, 2637].forEach((f, i) => tone({ f, dur: .5, type: "sine", gain: .13, delay: i * .07 }));
+      noise({ dur: .5, f: 4200, to: 9000, q: .6, gain: .1 });
+    },
   };
 })();
 
@@ -799,6 +870,11 @@ const LINES = {
     "Order reversed. Blame {who}.",
   ],
   seven: ["A 7 lands — the next player is capped at 7 or lower."],
+  reset: [
+    "{who} wipes the slate — pile back to zero.",
+    "A 2! Anything goes now.",
+    "{who} resets the pile.",
+  ],
   win: ["{who} wins. Everyone else is on drugs.", "{who} takes it. Shameful scenes.", "Winner: {who}."],
 };
 const fill = (tpl, d) => tpl.replace(/\{(\w+)\}/g, (_, k) => d[k] != null ? d[k] : "");
@@ -850,6 +926,66 @@ function burstAt(x, y, { count = 26, colors = ["#ffb300", "#ff6d00", "#ffe082", 
   wave.style.top = y + "px";
   layer.appendChild(wave);
   setTimeout(() => wave.remove(), 750);
+}
+
+/* ---- special-card effects on the pile ----
+   These live in the fx layer (not inside #pile-stack) because render() rebuilds
+   the pile's children on every state update and would wipe them. */
+function pileClass(cls, ms) {
+  const ps = document.getElementById("pile-stack");
+  ps.classList.remove(cls);
+  void ps.offsetWidth;
+  ps.classList.add(cls);
+  setTimeout(() => ps.classList.remove(cls), ms);
+}
+
+function resetEffect(who) {
+  const r = pileRect(), c = centerOf(r);
+  const layer = document.getElementById("fx-layer");
+  sfx.reset();
+  pileClass("pile-reset", 700);
+
+  const ring = document.createElement("div");
+  ring.className = "reset-ring";
+  ring.style.left = c.x + "px"; ring.style.top = c.y + "px";
+  layer.appendChild(ring);
+  setTimeout(() => ring.remove(), 900);
+
+  const zero = document.createElement("div");
+  zero.className = "zero-mark";
+  zero.textContent = "0";
+  zero.style.left = c.x + "px"; zero.style.top = c.y + "px";
+  layer.appendChild(zero);
+  setTimeout(() => zero.remove(), 1100);
+
+  burstAt(c.x, c.y, { count: 12, spread: 150, dur: .6, colors: ["#4fc3f7", "#b3e5fc", "#fff"] });
+  banner("Reset", "cool");
+  toast(fill(pick(LINES.reset), { who }), "", false);
+}
+
+function mirrorEffect(who, mirrors) {
+  const r = pileRect(), c = centerOf(r);
+  const layer = document.getElementById("fx-layer");
+  sfx.shimmer();
+  pileClass("pile-ghost", 1000);
+
+  const clip = document.createElement("div");
+  clip.className = "sweep-clip";
+  clip.style.left = r.left + "px";
+  clip.style.top = r.top + "px";
+  clip.style.width = r.width + "px";
+  clip.style.height = r.height + "px";
+  clip.innerHTML = `<div class="bar"></div>`;
+  layer.appendChild(clip);
+  setTimeout(() => clip.remove(), 1100);
+
+  const label = document.createElement("div");
+  label.className = "mirror-label";
+  label.textContent = mirrors == null ? "transparent — anything goes" : "counts as " + RANK_LABEL(mirrors);
+  label.style.left = c.x + "px";
+  label.style.top = (r.top - 6) + "px";
+  layer.appendChild(label);
+  setTimeout(() => label.remove(), 1700);
 }
 
 /* ---- geometry helpers ---- */
@@ -1000,6 +1136,13 @@ function onFx(msg) {
       break;
     case "seven":
       toast(LINES.seven[0]);
+      break;
+    // these land as the played card touches down (see flyCards timing)
+    case "reset":
+      setTimeout(() => resetEffect(msg.who), 400);
+      break;
+    case "mirror":
+      setTimeout(() => mirrorEffect(msg.who, msg.mirrors), 400);
       break;
     case "emote":
       showEmote(msg.whoId, msg.e);
