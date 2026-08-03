@@ -527,7 +527,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.3.0</span>
+<span id="version-tag">v1.3.1</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -564,6 +564,7 @@
     <div class="menu-hint">Share this code with your friends:</div>
     <div class="room-code" id="lobby-code"></div>
     <div class="lobby-list" id="lobby-players"></div>
+    <div class="menu-hint" id="deal-hint" style="min-height:2.4em"></div>
     <div id="host-opts" style="display:none; flex-direction:column; gap:12px; align-items:center;">
       <div class="menu-row">
         <label>Bots</label>
@@ -1101,6 +1102,25 @@ function refreshOptLabels() {
   document.getElementById("opt-bots").textContent = optVals.bots;
   document.getElementById("opt-decks").textContent = optVals.decks;
   document.getElementById("opt-burn").textContent = optVals.burn === 0 ? "Off" : optVals.burn;
+  updateDealHint();
+}
+
+/* Live "what this deal looks like" summary in the lobby. */
+function updateDealHint() {
+  const el = document.getElementById("deal-hint");
+  if (!el) return;
+  const humans = view ? view.players.filter(p => !p.bot).length : 1;
+  const seats = humans + optVals.bots;
+  const dealt = seats * 9;
+  const minDecks = Math.ceil((dealt + 4) / 52);
+  const decks = Math.max(optVals.decks, minDecks);
+  const total = decks * 52;
+  let txt = `${seats} player${seats === 1 ? "" : "s"} × 9 cards = ${dealt} dealt, ` +
+            `${total - dealt} left in the draw pile (${total} cards total).`;
+  if (decks > optVals.decks) {
+    txt += ` ${seats} players need ${minDecks} decks — this will be raised automatically.`;
+  }
+  el.textContent = txt;
 }
 
 function toggleRules(show) {

@@ -18,7 +18,7 @@ const SERVER_STARTED = Date.now();
 
 /* ================= Stats (persisted) ================= */
 const STATS_FILE = path.join(DATA_DIR, "stats.json");
-let statsWritable = true;
+let statsError = null;
 const stats = {
   gamesStarted: 0,
   gamesFinished: 0,
@@ -41,15 +41,21 @@ try {
 let statsDirty = false;
 function bump(key, n = 1) { stats[key] += n; statsDirty = true; }
 function bumpMap(map, key, n = 1) { stats[map][key] = (stats[map][key] || 0) + n; statsDirty = true; }
+/* Keeps retrying: if the volume is fixed while running, saving resumes on its
+ * own without a restart. */
 function saveStats() {
-  if (!statsDirty || !statsWritable) return;
-  statsDirty = false;
+  if (!statsDirty) return;
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+    statsDirty = false;
+    if (statsError) { console.log("Stats file is writable again — saving resumed."); statsError = null; }
   } catch (e) {
-    statsWritable = false;
-    console.warn("Stats can't be saved (" + e.code + ") — continuing in-memory only. Check the data volume permissions.");
+    if (!statsError) {
+      console.warn(`Cannot write ${STATS_FILE} (${e.code}). Stats are in-memory only until this is fixed.`);
+      console.warn(`The container runs as uid 1000 (user "node"); a bind-mounted host folder owned by root is the usual cause.`);
+    }
+    statsError = `${e.code} writing ${STATS_FILE}`;
   }
 }
 setInterval(saveStats, 10000);
@@ -118,7 +124,9 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({
       uptimeMs: now - SERVER_STARTED,
       connections: wss ? wss.clients.size : 0,
-      statsWritable,
+      statsWritable: !statsError,
+      statsError,
+      statsFile: STATS_FILE,
       rooms: roomList,
       stats,
     }));
@@ -655,6 +663,15 @@ function handle(ws, msg) {
   }
 }
 
-server.listen(PORT, () => {
-  console.log(`Drugs server running → http://localhost:${PORT}`);
-});
+/* Only listen when run directly, so the rule functions can be required and
+ * unit-tested (see test/rules.test.js). */
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Drugs server running → http://localhost:${PORT}`);
+  });
+}
+
+module.exports = {
+  makeDeck, effectiveTop, canPlayRank, resolvePlay, pickUpPile,
+  activeZone, legalIndices, drawUp, hasWon, RANK_LABEL, cardName,
+};

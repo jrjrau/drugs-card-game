@@ -70,7 +70,7 @@
       <tbody id="rooms"></tbody>
     </table>
     <div class="muted" id="no-rooms" style="padding:8px 10px;">No active rooms.</div>
-    <div class="warn" id="stats-warn" style="display:none">⚠ Stats file isn't writable — counters reset on restart. Check the data volume permissions.</div>
+    <div class="warn" id="stats-warn" style="display:none"></div>
   </div>
 
   <h2>All-time stats</h2>
@@ -131,7 +131,13 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s; re
 function renderDash(d) {
   document.getElementById("uptime").textContent = "Server uptime " + fmtDur(d.uptimeMs);
   document.getElementById("conn-count").textContent = d.connections;
-  document.getElementById("stats-warn").style.display = d.statsWritable ? "none" : "block";
+  const warn = document.getElementById("stats-warn");
+  warn.style.display = d.statsWritable ? "none" : "block";
+  if (!d.statsWritable) {
+    warn.textContent = `⚠ Stats can't be saved: ${d.statsError || "unknown error"}. ` +
+      `Counters are in-memory only and reset on restart. The container runs as uid 1000 — ` +
+      `either switch to the named volume in docker-compose.yml, or run: sudo chown -R 1000:1000 data`;
+  }
 
   const tb = document.getElementById("rooms");
   tb.innerHTML = "";

@@ -51,6 +51,27 @@ npm install
 npm start
 ```
 
+### Tests
+
+```bash
+cd server
+npm test        # rule tests — special cards, Overdose runs, pile logic
+```
+
+### Stats storage
+
+All-time stats live in `stats.json` inside the container's `/app/data`, saved
+every 10 seconds. The compose file uses a **named volume** so the directory is
+owned by the container's `node` user (uid 1000) automatically. If you swap it
+for a bind mount, the host folder must be owned by uid 1000:
+
+```bash
+mkdir -p data && sudo chown -R 1000:1000 data
+```
+
+The admin dashboard warns (with the exact error) if saving fails, and resumes
+by itself once permissions are fixed — no restart needed.
+
 ### Behind a reverse proxy (Synology etc.)
 
 Works over HTTPS/WSS automatically. Two things the proxy must do:

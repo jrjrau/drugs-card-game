@@ -192,7 +192,7 @@
   <button id="menu-btn" class="secondary">Menu</button>
 </div>
 <div id="log"></div>
-<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.3.0 (solo)</span>
+<span style="position:fixed; left:10px; bottom:8px; font-size:.7rem; opacity:.45;" id="version-tag">v1.3.1 (solo)</span>
 
 <!-- Game over overlay -->
 <div id="overlay" class="overlay">
@@ -258,10 +258,15 @@ function stepOpt(key, dir) {
   updateDeckHint();
 }
 function updateDeckHint() {
-  const cards = opts.decks * 52;
-  const needed = (opts.bots + 1) * 9;
-  const el = document.getElementById("deck-hint");
-  el.textContent = `${cards} cards in play, ${opts.bots + 1} players (${needed} dealt).`;
+  const seats = opts.bots + 1;
+  const dealt = seats * 9;
+  const minDecks = Math.ceil((dealt + 4) / 52);
+  const decks = Math.max(opts.decks, minDecks);
+  const total = decks * 52;
+  let txt = `${seats} player${seats === 1 ? "" : "s"} × 9 cards = ${dealt} dealt, ` +
+            `${total - dealt} left in the draw pile (${total} cards total).`;
+  if (decks > opts.decks) txt += ` ${seats} players need ${minDecks} decks — raised automatically.`;
+  document.getElementById("deck-hint").textContent = txt;
 }
 function showMenu() {
   document.getElementById("overlay").classList.remove("show");
@@ -771,6 +776,9 @@ function renderTable(elId, p, isPlayer, myZone, myLegal) {
 /* ============ Setup ============ */
 function newGame() {
   document.getElementById("overlay").classList.remove("show");
+  // every player needs 9 cards, so a big table needs more than one deck
+  const minDecks = Math.ceil(((opts.bots + 1) * 9 + 4) / 52);
+  if (opts.decks < minDecks) { opts.decks = minDecks; updateDeckHint(); }
   state.deck = makeDeck(opts.decks);
   state.pile = [];
   state.turn = 0;

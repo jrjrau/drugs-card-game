@@ -13,5 +13,14 @@ services:
     # let running games finish before the container is replaced (graceful drain)
     stop_grace_period: 16m
     volumes:
-      - ./data:/app/data
+      # Named volume: Docker gives it the image's ownership (uid 1000 / "node"),
+      # so stats.json is writable with no chown needed on the host.
+      - drugs-data:/app/data
+      # Prefer a host folder you can browse? Use this instead, but the folder
+      # must be owned by uid 1000:
+      #   mkdir -p data && sudo chown -R 1000:1000 data
+      # - ./data:/app/data
     restart: unless-stopped
+
+volumes:
+  drugs-data:
