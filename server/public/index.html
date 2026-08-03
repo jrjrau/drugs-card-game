@@ -527,7 +527,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.3.1</span>
+<span id="version-tag">v1.3.2</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -564,7 +564,7 @@
     <div class="menu-hint">Share this code with your friends:</div>
     <div class="room-code" id="lobby-code"></div>
     <div class="lobby-list" id="lobby-players"></div>
-    <div class="menu-hint" id="deal-hint" style="min-height:2.4em"></div>
+    <div class="menu-hint" id="deal-hint"></div>
     <div id="host-opts" style="display:none; flex-direction:column; gap:12px; align-items:center;">
       <div class="menu-row">
         <label>Bots</label>
@@ -1086,14 +1086,45 @@ function joinRoom() {
   if (code.length !== 4) return document.getElementById("err").textContent = "Codes are 4 characters.";
   ws.send(JSON.stringify({ t: "join", name, code }));
 }
+/* Every player needs 9 cards, so the deck count has a floor that grows with
+ * the table. The lobby raises it automatically rather than letting someone
+ * deal a game that can't be dealt. */
+const MAX_DECKS = 4;
+function minDecksFor(seats) { return Math.ceil((seats * 9 + 4) / 52); }
+function seatCount() {
+  const humans = view ? view.players.filter(p => !p.bot).length : 1;
+  return humans + optVals.bots;
+}
+function enforceMinDecks(alsoSend) {
+  const need = minDecksFor(seatCount());
+  if (optVals.decks >= need) return false;
+  optVals.decks = Math.min(MAX_DECKS, need);
+  refreshOptLabels();
+  if (alsoSend && ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "opts", opts: optVals }));
+  return true;
+}
+
 function stepOpt(key, dir) {
+  const need = () => minDecksFor(seatCount());
   if (key === "burn") {
     let i = BURN_STEPS.indexOf(optVals.burn) + dir;
     i = Math.min(BURN_STEPS.length - 1, Math.max(0, i));
     optVals.burn = BURN_STEPS[i];
+  } else if (key === "decks") {
+    const floor = need();
+    const wanted = optVals.decks + dir;
+    if (dir < 0 && wanted < floor) {
+      toast(`${seatCount()} players need ${floor} deck${floor === 1 ? "" : "s"}.`);
+      return;
+    }
+    optVals.decks = Math.min(MAX_DECKS, Math.max(floor, wanted));
   } else {
-    const lims = { bots: [0, 5], decks: [1, 4] }[key];
-    optVals[key] = Math.min(lims[1], Math.max(lims[0], optVals[key] + dir));
+    optVals.bots = Math.min(5, Math.max(0, optVals.bots + dir));
+    const floor = need();
+    if (optVals.decks < floor) {
+      optVals.decks = Math.min(MAX_DECKS, floor);
+      toast(`Decks raised to ${optVals.decks} for ${seatCount()} players.`);
+    }
   }
   refreshOptLabels();
   if (ws && ws.readyState === 1 && view) ws.send(JSON.stringify({ t: "opts", opts: optVals }));
@@ -1105,22 +1136,9 @@ function refreshOptLabels() {
   updateDealHint();
 }
 
-/* Live "what this deal looks like" summary in the lobby. */
 function updateDealHint() {
   const el = document.getElementById("deal-hint");
-  if (!el) return;
-  const humans = view ? view.players.filter(p => !p.bot).length : 1;
-  const seats = humans + optVals.bots;
-  const dealt = seats * 9;
-  const minDecks = Math.ceil((dealt + 4) / 52);
-  const decks = Math.max(optVals.decks, minDecks);
-  const total = decks * 52;
-  let txt = `${seats} player${seats === 1 ? "" : "s"} × 9 cards = ${dealt} dealt, ` +
-            `${total - dealt} left in the draw pile (${total} cards total).`;
-  if (decks > optVals.decks) {
-    txt += ` ${seats} players need ${minDecks} decks — this will be raised automatically.`;
-  }
-  el.textContent = txt;
+  if (el) el.textContent = `${seatCount() * 9} cards dealt`;
 }
 
 function toggleRules(show) {
@@ -1194,6 +1212,7 @@ function onState() {
     }
     optVals.bots = view.opts.bots; optVals.decks = view.opts.decks; optVals.burn = view.opts.burn;
     refreshOptLabels();
+    enforceMinDecks(view.isHost);   // players joining can raise the deck floor
     document.getElementById("host-opts").style.display = view.isHost ? "flex" : "none";
     document.getElementById("lobby-wait").style.display = view.isHost ? "none" : "block";
     setStatus("Waiting in lobby…");
