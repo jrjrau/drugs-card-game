@@ -1,7 +1,9 @@
 services:
   drugs:
-    build: .
-    image: drugs-card-game
+    # Pulls the image built automatically by GitHub Actions on every push.
+    # To build locally instead, comment out `image:` and uncomment `build:`.
+    image: ghcr.io/jrjrau/drugs-card-game:latest
+    # build: .
     container_name: drugs-card-game
     ports:
       - "3000:3000"
