@@ -395,6 +395,7 @@
     45% { opacity: .32; }
   }
   .pile-ghost { animation: ghostpulse 1s ease; }
+  .card.mirror-card { box-shadow: 0 2px 5px rgba(0,0,0,.45), 0 0 14px rgba(120,215,255,.55); }
   @keyframes floatlabel {
     0% { transform: translate(-50%, 12px); opacity: 0; }
     22% { transform: translate(-50%, -8px); opacity: 1; }
@@ -589,7 +590,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.4.0</span>
+<span id="version-tag">v1.4.1</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -695,6 +696,36 @@ function cardEl(card, faceUp = true) {
   const div = document.createElement("div");
   div.className = "card";
   div.innerHTML = faceUp ? cardSVG(card) : cardBackSVG();
+  return div;
+}
+
+/* A 3 sitting on top of the pile is drawn as frosted glass showing the card it
+ * mirrors, so the effective rank is readable at a glance all turn long. */
+function mirrorCardSVG(mirrorRank, mirrorSuit) {
+  const any = mirrorRank == null;
+  const label = any ? "ANY" : RANK_LABEL(mirrorRank);
+  const suit = any ? "" : (mirrorSuit || "");
+  const red = suit === "♥" || suit === "♦";
+  const ink = any ? "#1f6f8f" : (red ? "#b3364a" : "#1f3b55");
+  return `
+  <svg viewBox="0 0 74 104" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="72" height="102" rx="7" fill="#dcf1fb" stroke="#7fd7ff" stroke-width="1.5"/>
+    <rect x="4.5" y="4.5" width="65" height="95" rx="5" fill="#ffffff" fill-opacity=".5"/>
+    <path d="M8 100 L42 4 L56 4 L22 100 Z" fill="#ffffff" fill-opacity=".38"/>
+    <path d="M52 100 L68 52 L71 52 L71 100 Z" fill="#ffffff" fill-opacity=".22"/>
+    <text x="37" y="26" font-size="6.5" fill="#2f7f9f" text-anchor="middle" letter-spacing="1.4">MIRRORS</text>
+    <text x="37" y="${suit ? 60 : 64}" font-size="${any ? 19 : 31}" font-weight="bold" fill="${ink}"
+          text-anchor="middle" font-family="Georgia,serif">${label}</text>
+    ${suit ? `<text x="37" y="84" font-size="19" fill="${ink}" text-anchor="middle">${suit}</text>` : ""}
+    <text x="7" y="18" font-size="13" font-weight="bold" fill="#1f9bcc" font-family="Georgia,serif">3</text>
+    <text x="67" y="98" font-size="13" font-weight="bold" fill="#1f9bcc" font-family="Georgia,serif"
+          text-anchor="end" transform="rotate(180 63 92)">3</text>
+  </svg>`;
+}
+function mirrorCardEl(mirrorRank, mirrorSuit) {
+  const div = document.createElement("div");
+  div.className = "card mirror-card";
+  div.innerHTML = mirrorCardSVG(mirrorRank, mirrorSuit);
   return div;
 }
 
@@ -996,6 +1027,14 @@ function seatRect(pid) {
   return el ? el.getBoundingClientRect() : null;
 }
 function pileRect() { return document.getElementById("pile-stack").getBoundingClientRect(); }
+/* Suit of the card a top 3 is mirroring, if it's still visible in the pile top. */
+function mirroredSuit() {
+  if (!view) return null;
+  for (let i = view.pileTop.length - 2; i >= 0; i--) {
+    if (view.pileTop[i].rank !== 3) return view.pileTop[i].suit;
+  }
+  return null;
+}
 function centerOf(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
 
 /* ---- flying cards ---- */
@@ -1524,7 +1563,11 @@ function render() {
   } else {
     const nFlying = fly ? Math.min(fly.cards.length, view.pileTop.length, 4) : 0;
     view.pileTop.forEach((c, i) => {
-      const el = cardEl(c, true);
+      const isTop = i === view.pileTop.length - 1;
+      // a 3 on top is drawn as the card it mirrors
+      const el = (isTop && c.rank === 3)
+        ? mirrorCardEl(view.effectiveTop, mirroredSuit())
+        : cardEl(c, true);
       el.style.left = i * 3 + "px";
       el.style.top = i * 2 + "px";
       const isFlying = fly && i >= view.pileTop.length - nFlying;
