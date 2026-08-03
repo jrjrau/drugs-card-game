@@ -72,6 +72,21 @@ mkdir -p data && sudo chown -R 1000:1000 data
 The admin dashboard warns (with the exact error) if saving fails, and resumes
 by itself once permissions are fixed — no restart needed.
 
+### Discord Activity
+
+The game runs as a Discord Activity (embedded in a voice channel/server).
+Setup in the [Developer Portal](https://discord.com/developers/applications):
+
+1. Create an app → **Activities → Settings → Enable Activities**
+2. **Activities → URL Mappings**: map `/` to your public game host
+3. **OAuth2 → Reset Secret**, then set both env vars for the container:
+   `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` (never commit the secret)
+4. Unreleased Activities can only be launched by the app's **team members** —
+   add your friends under Teams, or submit for distribution review
+
+Inside Discord the client completes the Embedded App SDK handshake (bundled
+at build time — no CDN) and pre-fills each player's Discord display name.
+
 ### Behind a reverse proxy (Synology etc.)
 
 Works over HTTPS/WSS automatically. Two things the proxy must do:

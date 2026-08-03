@@ -494,6 +494,48 @@
   }
   #tools button.off { opacity: .5; }
 
+  /* ---- compact layout: Discord Activity iframe / phones ---- */
+  #chat-toggle { display: none; }
+  @media (max-width: 900px) {
+    :root { --card-w: 56px; --card-h: 79px; }
+    h1 { font-size: 1rem; }
+    #status { font-size: .85rem; }
+    .opp-panel .row { transform: scale(.5); }
+    .opp-panel .bot-table-row, .opp-panel .opp-table-row { margin-top: -46px; }
+    #center { gap: 16px; }
+    #hand-row { margin-top: 16px; }
+    button { padding: 7px 14px; font-size: .85rem; }
+
+    /* chat becomes a slide-in overlay with a toggle */
+    #chat-col {
+      position: fixed; right: 0; top: 0; bottom: 0;
+      height: 100dvh; width: min(78vw, 300px);
+      transform: translateX(100%);
+      transition: transform .25s ease;
+      z-index: 30;
+      box-shadow: -8px 0 30px rgba(0,0,0,.5);
+    }
+    #chat-col.open { transform: translateX(0); }
+    #chat-toggle {
+      display: block;
+      position: fixed; right: 12px; bottom: 14px;
+      width: 46px; height: 46px; padding: 0;
+      border-radius: 50%; font-size: 1.2rem;
+      z-index: 31;
+    }
+    #chat-toggle .chat-dot {
+      position: absolute; top: 2px; right: 2px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #e53935; display: none;
+    }
+    #chat-toggle.unread .chat-dot { display: block; }
+    #tools { right: 70px; }
+    #tools button { width: 36px; height: 36px; font-size: 1rem; }
+    #emote-bar { left: 6px; bottom: 8px; }
+    #emote-bar button { width: 30px; height: 30px; font-size: .95rem; }
+    #toast-slot { bottom: 64px; }
+  }
+
   /* ---- table themes ---- */
   body.theme-classic  { --felt: #1e5c3a; --felt-dark: #14432a; }
   body.theme-midnight { --felt: #26407a; --felt-dark: #0e1730; }
@@ -574,6 +616,7 @@
 </div>
 
 <div id="emote-bar"></div>
+<button id="chat-toggle" class="secondary" onclick="toggleChat()" title="Chat">💬<span class="chat-dot"></span></button>
 
 <!-- presentation layers -->
 <div id="fx-layer"></div>
@@ -590,7 +633,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.4.1</span>
+<span id="version-tag">v1.5.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -1328,7 +1371,23 @@ function toggleRules(show) {
 }
 
 /* ============ Chat ============ */
+function chatOpen() {
+  const col = document.getElementById("chat-col");
+  return getComputedStyle(document.getElementById("chat-toggle")).display === "none" ||
+         col.classList.contains("open");
+}
+function toggleChat() {
+  const col = document.getElementById("chat-col");
+  col.classList.toggle("open");
+  if (col.classList.contains("open")) {
+    document.getElementById("chat-toggle").classList.remove("unread");
+  }
+}
+function markUnread() {
+  if (!chatOpen()) document.getElementById("chat-toggle").classList.add("unread");
+}
 function addChat(from, text) {
+  markUnread();
   const box = document.getElementById("chat-msgs");
   const div = document.createElement("div");
   const f = document.createElement("span"); f.className = "from"; f.textContent = from + ": ";
@@ -1648,6 +1707,54 @@ function renderTableInto(el, faceUp, faceDownCount, isMe, zone, legal) {
 
 document.getElementById("code-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); joinRoom(); } });
 document.getElementById("name-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); createRoom(); } });
+
+/* ---- Discord Activity ----
+   When launched inside Discord (discordsays.com iframe), complete the SDK
+   handshake or Discord never reveals the frame, then use the player's
+   Discord name so nobody has to type one. Outside Discord this is a no-op. */
+const inDiscord = location.hostname.endsWith("discordsays.com") ||
+                  new URLSearchParams(location.search).has("frame_id");
+async function initDiscord() {
+  if (!inDiscord) return;
+  try {
+    const { discordClientId } = await (await fetch("config.json")).json();
+    if (!discordClientId) { sysChat("⚠ Server has no DISCORD_CLIENT_ID set."); return; }
+    await new Promise((ok, bad) => {
+      const s = document.createElement("script");
+      s.src = "vendor/discord-sdk.js";
+      s.onload = ok; s.onerror = bad;
+      document.head.appendChild(s);
+    });
+    const sdk = new DiscordEmbedded.DiscordSDK(discordClientId);
+    await sdk.ready();
+    try {
+      const { code } = await sdk.commands.authorize({
+        client_id: discordClientId,
+        response_type: "code",
+        state: "",
+        prompt: "none",
+        scope: ["identify"],
+      });
+      const { access_token } = await (await fetch("api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      })).json();
+      if (access_token) {
+        const auth = await sdk.commands.authenticate({ access_token });
+        const nick = auth.user.global_name || auth.user.username;
+        const inp = document.getElementById("name-input");
+        if (nick && !inp.value) inp.value = nick.slice(0, 16);
+      }
+    } catch (e) {
+      // identity is a nicety — the game works fine with a typed name
+      console.warn("Discord auth skipped:", e);
+    }
+  } catch (e) {
+    console.warn("Discord SDK init failed:", e);
+  }
+}
+initDiscord();
 
 /* ---- presentation init ---- */
 applyTheme(localStorage.getItem("drugsTheme") || "classic");

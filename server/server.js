@@ -12,6 +12,10 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ADMIN_KEY = process.env.ADMIN_KEY || "drugs-admin";
+// Discord Activity support. The client ID is public; the secret must only
+// ever live in the environment — never in the repo.
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || null;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || null;
 const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
@@ -97,8 +101,48 @@ const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   let file = url.pathname;
+  // Discord's proxy may keep the legacy /.proxy prefix on requests
+  if (file.startsWith("/.proxy/")) file = file.slice(7);
   if (file === "/") file = "/index.html";
   if (file === "/admin") file = "/admin.html";
+
+  if (file === "/config.json") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ discordClientId: DISCORD_CLIENT_ID }));
+  }
+
+  // OAuth code -> access token exchange for the Embedded App SDK
+  if (file === "/api/token" && req.method === "POST") {
+    if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+      res.writeHead(501, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "Discord is not configured on this server." }));
+    }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 4096) req.destroy(); });
+    req.on("end", async () => {
+      try {
+        const { code } = JSON.parse(body || "{}");
+        if (!code || typeof code !== "string") throw new Error("no code");
+        const r = await fetch("https://discord.com/api/oauth2/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: DISCORD_CLIENT_ID,
+            client_secret: DISCORD_CLIENT_SECRET,
+            grant_type: "authorization_code",
+            code,
+          }),
+        });
+        const data = await r.json();
+        res.writeHead(r.ok ? 200 : 502, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ access_token: data.access_token || null }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "bad request" }));
+      }
+    });
+    return;
+  }
 
   if (file === "/admin/data.json") {
     if (url.searchParams.get("key") !== ADMIN_KEY) {

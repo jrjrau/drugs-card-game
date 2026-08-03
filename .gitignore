@@ -1,5 +1,6 @@
 node_modules/
 server/data/
+server/public/vendor/
 smoke_tmp.js
 *.log
 .DS_Store

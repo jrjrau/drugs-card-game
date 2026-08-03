@@ -9,6 +9,10 @@ services:
       - "3168:3000"
     environment:
       - ADMIN_KEY=change-me-please
+      # Discord Activity (optional). The secret comes from the Developer
+      # Portal -> OAuth2 -> Reset Secret. NEVER commit the real value.
+      - DISCORD_CLIENT_ID=1533728522395320391
+      - DISCORD_CLIENT_SECRET=put-your-regenerated-secret-here
       # - DRAIN_TIMEOUT_MIN=15
     # let running games finish before the container is replaced (graceful drain)
     stop_grace_period: 16m

@@ -2,12 +2,13 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Install dependencies first so they cache separately from code changes
+# Full install (incl. esbuild) to bundle the Discord SDK, then prune to prod
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+RUN npm install
 
-COPY server.js ./
+COPY server.js sdk-entry.js ./
 COPY public ./public
+RUN npm run build && npm prune --omit=dev
 
 ENV PORT=3000
 ENV DATA_DIR=/app/data
