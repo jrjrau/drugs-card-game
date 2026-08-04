@@ -107,6 +107,14 @@ Setup in the [Developer Portal](https://discord.com/developers/applications):
 Inside Discord the client completes the Embedded App SDK handshake (bundled
 at build time — no CDN) and pre-fills each player's Discord display name.
 
+**For verification/distribution** Discord also wants a public Privacy Policy and
+Terms of Service, a tag, an install link and a support server. The server hosts
+the two documents at `/privacy` and `/terms` — point the Developer Portal at
+`https://your-host/privacy` and `https://your-host/terms`. Both pages fill in their contact
+paragraph from `SUPPORT_URL` and `CONTACT_EMAIL` at request time, so a real
+email address never has to be committed to this repo. They stay readable even
+from a blocked IP, since reviewers arrive from unknown addresses.
+
 ### Behind a reverse proxy (Synology etc.)
 
 Works over HTTPS/WSS automatically. Two things the proxy must do:

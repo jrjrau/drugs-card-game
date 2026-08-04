@@ -22,6 +22,10 @@ const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || null;
 const TRUST_PROXY = process.env.TRUST_PROXY !== "0";
 // Opt-in country/city lookup for admin display (one cached call per new IP).
 const GEOIP = process.env.GEOIP === "1";
+// Contact details for the privacy/terms pages. Kept in the environment so a
+// real email address never has to sit in a public repo.
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "";
+const SUPPORT_URL = process.env.SUPPORT_URL || "";
 const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
@@ -172,6 +176,17 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => { saveStats(); process.exit(0); });
 
 /* ================= Static file server ================= */
+const escHtml = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* Fills in the contact paragraph on the privacy/terms pages. Discord requires
+ * both documents to be publicly reachable and to name a way to reach us. */
+function contactBlock() {
+  const bits = [];
+  if (SUPPORT_URL) bits.push(`Join the <a href="${escHtml(SUPPORT_URL)}">support server</a> — that's the quickest way to reach the operator.`);
+  if (CONTACT_EMAIL) bits.push(`You can also email <a href="mailto:${escHtml(CONTACT_EMAIL)}">${escHtml(CONTACT_EMAIL)}</a>.`);
+  if (!bits.length) bits.push("Contact details have not been configured on this server yet — set SUPPORT_URL and CONTACT_EMAIL.");
+  return bits.join(" ");
+}
+
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
@@ -180,10 +195,14 @@ const server = http.createServer((req, res) => {
   if (file.startsWith("/.proxy/")) file = file.slice(7);
   if (file === "/") file = "/index.html";
   if (file === "/admin") file = "/admin.html";
+  if (file === "/privacy") file = "/privacy.html";
+  if (file === "/terms") file = "/terms.html";
 
   // Blocked visitors get nothing but the admin pages (key-protected anyway, so
   // you can still unblock yourself if you fat-finger your own address).
-  if (blocked.has(clientIp(req)) && !file.startsWith("/admin")) {
+  // The legal pages stay public — Discord's reviewers must be able to read them.
+  const alwaysPublic = file.startsWith("/admin") || file === "/privacy.html" || file === "/terms.html" || file === "/legal.css";
+  if (blocked.has(clientIp(req)) && !alwaysPublic) {
     res.writeHead(403, { "Content-Type": "text/plain" });
     return res.end("Blocked.");
   }
@@ -311,10 +330,13 @@ const server = http.createServer((req, res) => {
 
   const full = path.join(PUBLIC_DIR, path.normalize(file));
   if (!full.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end(); }
+  const legal = file === "/privacy.html" || file === "/terms.html";
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); return res.end("Not found"); }
+    let body = data;
+    if (legal) body = String(data).replace("{{CONTACT_BLOCK}}", contactBlock());
     res.writeHead(200, { "Content-Type": MIME[path.extname(full)] || "application/octet-stream" });
-    res.end(data);
+    res.end(body);
   });
 });
 

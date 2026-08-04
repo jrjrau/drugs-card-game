@@ -13,6 +13,10 @@ services:
       # Portal -> OAuth2 -> Reset Secret. NEVER commit the real value.
       - DISCORD_CLIENT_ID=1533728522395320391
       - DISCORD_CLIENT_SECRET=put-your-regenerated-secret-here
+      # Shown on /privacy and /terms (Discord verification requires a contact).
+      # Kept here rather than in the repo so the address isn't public on GitHub.
+      - SUPPORT_URL=https://discord.gg/your-invite
+      - CONTACT_EMAIL=you@example.com
       # - DRAIN_TIMEOUT_MIN=15
       # Show city/country next to each IP in /admin (one cached lookup per IP
       # via ip-api.com). Off by default — no outbound calls unless enabled.

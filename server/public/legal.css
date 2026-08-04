@@ -1,0 +1,22 @@
+/* Shared styling for the privacy policy and terms pages. */
+:root { --felt: #1e5c3a; --felt-dark: #14432a; --gold: #ffd54a; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 100%);
+  background-attachment: fixed;
+  color: #f2f2f2; min-height: 100vh; line-height: 1.55;
+  padding: 28px 20px 60px; max-width: 780px; margin: 0 auto;
+}
+h1 { font-size: 1.35rem; letter-spacing: 3px; margin-bottom: 4px; }
+.sub { font-size: .8rem; opacity: .6; margin-bottom: 26px; }
+h2 {
+  font-size: .92rem; letter-spacing: 2px; color: var(--gold);
+  margin: 26px 0 8px; text-transform: uppercase;
+}
+p, li { font-size: .93rem; margin-bottom: 9px; }
+ul { padding-left: 22px; }
+a { color: var(--gold); }
+.box { background: rgba(0,0,0,.28); border-radius: 12px; padding: 16px 20px; margin-bottom: 6px; }
+.foot { margin-top: 34px; font-size: .8rem; opacity: .6; }
+strong { color: #fff; }
