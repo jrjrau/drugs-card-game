@@ -209,6 +209,12 @@
   }
   #status.my-turn { background: rgba(255,213,74,.9); color: #333; font-weight: 700; }
 
+  /* ---- spectating: no seat, no controls, more room for the table ---- */
+  body.spectating #player-zone,
+  body.spectating #emote-bar { display: none !important; }
+  body.spectating #others-area { align-items: center; }
+  .seat.watchers { background: rgba(0,0,0,.3); opacity: .8; }
+
   .legal-links { font-size: .72rem; opacity: .5; margin-top: 2px; }
   .legal-links a { color: inherit; }
 
@@ -626,6 +632,7 @@
     <div style="display:flex; gap:8px;">
       <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="width:120px; text-transform:uppercase;">
       <button id="join-btn" class="secondary">Join</button>
+      <button id="watch-btn" class="secondary" title="Watch a game in progress">👁 Watch</button>
     </div>
     <button id="howto-btn" class="secondary" style="width:220px">How to play</button>
     <div id="err"></div>
@@ -660,7 +667,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.6.2</span>
+<span id="version-tag">v1.7.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -686,6 +693,9 @@
     </ul>
     <h4>Overdose</h4>
     <p>If the configured number of same-rank cards (default 4) pile up in a row on top, the pile overdoses — it's killed like a 10 and the player who completed it goes again.</p>
+    <h4>Dropping out and watching</h4>
+    <p>Lose your connection and a bot covers your seat — rejoin with the <b>same room code and name</b> (capitalisation doesn't matter) and you get your cards back. If <i>everybody</i> drops, the game pauses instead of ending, and waits a few minutes for someone to return.</p>
+    <p>Not playing? Enter a room code and hit <b>👁 Watch</b> to spectate. You'll see the table and can chat, but not the players' hands.</p>
     <div class="close-row"><button id="rules-close-btn">Got it</button></div>
   </div>
 </div>
@@ -1265,6 +1275,7 @@ let view = null;        // latest server view
 let reveal = null;      // {card, ok, who} currently displayed
 let revealTimer = null;
 let selected = [];
+let spectating = false;
 const optVals = { bots: 0, decks: 1, burn: 4 };
 const BURN_STEPS = [0,3,4,5,6,7,8];
 
@@ -1277,13 +1288,17 @@ function connect() {
     const msg = JSON.parse(ev.data);
     switch (msg.t) {
       case "joined":
+        spectating = !!msg.spectator;
+        document.body.classList.toggle("spectating", spectating);
         document.getElementById("home").classList.remove("show");
         document.getElementById("chat-col").classList.add("show");
         document.getElementById("tools").classList.add("show");
-        document.getElementById("emote-bar").classList.add("show");
-        buildEmoteBar();
-        document.getElementById("room-tag").textContent = "· room " + msg.code;
-        sysChat("You're in room " + msg.code);
+        if (!spectating) { document.getElementById("emote-bar").classList.add("show"); buildEmoteBar(); }
+        document.getElementById("room-tag").textContent =
+          (spectating ? "· watching " : "· room ") + msg.code;
+        sysChat(spectating ? "You're watching room " + msg.code + " — you can chat, but not play."
+                           : "You're in room " + msg.code);
+        if (msg.rejoined) { toast("Welcome back — you've got your seat back.", "good", true); banner("Back in!", "cool"); }
         break;
       case "state":
         view = msg.view;
@@ -1299,7 +1314,9 @@ function connect() {
       case "chat": addChat(msg.from, msg.text); break;
       case "log": log(msg.text); sysChat(msg.text); break;
       case "gameover": {
-        const iWon = view && msg.winnerId === view.youId;
+        const iWon = !spectating && view && msg.winnerId === view.youId;
+        // spectators have no lobby to go back to
+        document.getElementById("again-btn").style.display = spectating ? "none" : "";
         document.getElementById("overlay-title").textContent =
           iWon ? "🎉 You win!" : `🏆 ${msg.winner} wins!`;
         banner(iWon ? "You win!" : msg.winner + " wins!", "win");
@@ -1344,6 +1361,13 @@ function joinRoom() {
   if (!name) return document.getElementById("err").textContent = "Enter a name first.";
   if (code.length !== 4) return document.getElementById("err").textContent = "Codes are 4 characters.";
   ws.send(JSON.stringify({ t: "join", name, code }));
+}
+/* Watching needs a code but not really a name — it's only used in chat. */
+function watchRoom() {
+  const name = document.getElementById("name-input").value.trim() || "Someone";
+  const code = document.getElementById("code-input").value.trim().toUpperCase();
+  if (code.length !== 4) return document.getElementById("err").textContent = "Enter the 4-character code of the game to watch.";
+  ws.send(JSON.stringify({ t: "spectate", name, code }));
 }
 /* Every player needs 9 cards, so the deck count has a floor that grows with
  * the table. The lobby raises it automatically rather than letting someone
@@ -1454,7 +1478,10 @@ function canPlayRank(r) {
   if (top === null || top === 2) return true;
   return r >= top;
 }
-function me() { return view.players.find(p => p.id === view.youId); }
+/* Spectators have no seat, so stand in an empty one — the renderer then draws
+ * every player as an opponent and the (hidden) player zone stays empty. */
+const NO_SEAT = { id: null, name: "", hand: [], faceUp: [], faceDownCount: 0, bot: false, connected: true };
+function me() { return view.players.find(p => p.id === view.youId) || NO_SEAT; }
 function myZone() {
   const m = me();
   if (m.hand && m.hand.length > 0) return "hand";
@@ -1462,11 +1489,13 @@ function myZone() {
   if (m.faceDownCount > 0) return "faceDown";
   return null;
 }
-function myTurn() { return view.turnId === view.youId && !view.busy && !reveal; }
+function myTurn() { return !spectating && view.turnId === view.youId && !view.busy && !reveal; }
 
 /* ============ State handling ============ */
 let prevPhase = null;
 function onState() {
+  spectating = !!view.spectating;                                  // server is the authority
+  document.body.classList.toggle("spectating", spectating);
   selected = selected.filter(() => false); // clear on every server update
   if (view.phase === "playing" && prevPhase !== "playing") { sfx.deal(); prevMyTurn = false; }
   prevPhase = view.phase;
@@ -1500,6 +1529,16 @@ function onState() {
 }
 
 function updateTurnStatus() {
+  // A frozen game is waiting on somebody to rejoin — nothing will move until then.
+  if (view.frozen) {
+    setStatus("Paused — everyone has dropped out. The game resumes when a player rejoins with their name.");
+    return;
+  }
+  if (spectating && !reveal) {
+    const turnP = view.players.find(p => p.id === view.turnId);
+    setStatus(`Watching room ${view.code}${turnP ? ` — ${turnP.name}'s turn` : ""}${sevenNote()}`);
+    return;
+  }
   if (reveal) {
     setStatus(reveal.ok
       ? `${reveal.who} flipped ${RANK_LABEL(reveal.card.rank)}${reveal.card.suit} — it plays!`
@@ -1594,6 +1633,13 @@ function render() {
       bar.appendChild(a);
     }
   });
+  if (view.watchers > 0) {
+    const w = document.createElement("span");
+    w.className = "seat watchers";
+    w.title = view.watchers === 1 ? "1 person is watching" : view.watchers + " people are watching";
+    w.textContent = "👁 " + view.watchers;
+    bar.appendChild(w);
+  }
 
   // your-turn highlight
   const isMyTurn = view.phase === "playing" && view.turnId === view.youId && !reveal;
@@ -1759,6 +1805,7 @@ document.getElementById("name-input").addEventListener("keydown", e => { if (e.k
  * Discord's Activity proxy enforces a CSP that blocks inline handlers. */
 document.getElementById("create-btn").onclick = createRoom;
 document.getElementById("join-btn").onclick = joinRoom;
+document.getElementById("watch-btn").onclick = watchRoom;
 document.getElementById("howto-btn").onclick = () => toggleRules(true);
 document.getElementById("rules-close-btn").onclick = () => toggleRules(false);
 document.getElementById("help-btn").onclick = () => toggleRules(true);

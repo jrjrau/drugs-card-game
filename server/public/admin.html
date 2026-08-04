@@ -175,7 +175,11 @@ function renderDash(d) {
       const tip = p.ip ? ` title="${esc(p.ip + (p.geo ? " — " + p.geo : ""))}"` : "";
       return `<span class="pill ${cls}"${tip}>${esc(p.name)}${extra}</span>`;
     }).join("");
-    tr.innerHTML = `<td><b>${r.code}</b></td><td>${r.phase}</td><td>${players}</td>
+    const phase = r.frozenForMs != null
+      ? `<span title="Nobody connected — held so they can rejoin">frozen ${fmtDur(r.frozenForMs)}</span>`
+      : r.phase;
+    const watchers = r.watchers ? ` <span class="pill" title="Spectators">👁 ${r.watchers}</span>` : "";
+    tr.innerHTML = `<td><b>${r.code}</b></td><td>${phase}</td><td>${players}${watchers}</td>
       <td>${fmtDur(r.ageMs)}</td><td>${fmtDur(r.gameAgeMs)}</td>
       <td>${r.deckCount} / ${r.pileCount}</td>
       <td class="muted">${r.opts.decks} deck, OD ${r.opts.burn || "off"}</td>

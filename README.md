@@ -29,7 +29,8 @@ Unlike standard Palace, the face-up and face-down cards are **dealt randomly** �
 - 🎛️ **Configurable games** — 1–4 decks, bot count, Overdose threshold
 - 📊 **Admin dashboard** (`/admin`) — live rooms, connections with IPs, close-a-game and IP blocking, plus all-time stats (aces played, piles picked up, wins…)
 - 🃏 **Solo mode** — a standalone single-file version vs bots ([index.html](index.html))
-- 🔁 Reconnect support — drop out and rejoin with the same name; a bot covers your seat meanwhile
+- 🔁 **Reconnect support** — drop out and rejoin with the same name (any capitalisation) and a bot hands your seat back. If everyone drops, the game freezes and is held for `ROOM_GRACE_MIN` (default 5) minutes instead of being lost
+- 👁 **Spectators** — watch any game with its room code: the full table, no hands, chat allowed
 
 ## Running it
 

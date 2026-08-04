@@ -9,8 +9,8 @@ const C = (rank, suit = "♠") => ({ rank, suit });
 /* A room with no connected players, so broadcasts are no-ops. */
 function room(pile, opts = {}) {
   return {
-    code: "TEST", phase: "playing", players: [], deck: [], pile: pile.slice(),
-    turn: 0, direction: 1, sevenActive: false, busy: false,
+    code: "TEST", phase: "playing", players: [], spectators: [], deck: [], pile: pile.slice(),
+    turn: 0, direction: 1, sevenActive: false, busy: false, abandonedAt: null,
     opts: Object.assign({ bots: 0, decks: 1, burn: 4 }, opts),
   };
 }

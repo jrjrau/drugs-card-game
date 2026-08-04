@@ -18,6 +18,9 @@ services:
       - SUPPORT_URL=https://discord.gg/your-invite
       - CONTACT_EMAIL=you@example.com
       # - DRAIN_TIMEOUT_MIN=15
+      # How long a game with nobody connected is held open for rejoins
+      # (it freezes meanwhile). Default 5 minutes.
+      # - ROOM_GRACE_MIN=5
       # Show city/country next to each IP in /admin (one cached lookup per IP
       # via ip-api.com). Off by default — no outbound calls unless enabled.
       # - GEOIP=1

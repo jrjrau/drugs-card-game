@@ -26,6 +26,9 @@ const GEOIP = process.env.GEOIP === "1";
 // real email address never has to sit in a public repo.
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "";
 const SUPPORT_URL = process.env.SUPPORT_URL || "";
+// How long a game with nobody connected is held open so players can rejoin.
+// The game freezes while abandoned — bots don't play on without an audience.
+const ROOM_GRACE_MS = (parseFloat(process.env.ROOM_GRACE_MIN) || 5) * 60 * 1000;
 const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
@@ -151,8 +154,10 @@ function lookupGeo(ip) {
 const DRAIN_TIMEOUT_MS = (parseInt(process.env.DRAIN_TIMEOUT_MIN, 10) || 15) * 60 * 1000;
 let draining = false;
 
+/* Games worth waiting for during a drain. A frozen (abandoned) game has nobody
+ * connected, so it must not hold up an update — it's dropped instead. */
 function playingRooms() {
-  return [...rooms.values()].filter(r => r.phase === "playing");
+  return [...rooms.values()].filter(r => r.phase === "playing" && !r.abandonedAt);
 }
 function checkDrainDone() {
   if (draining && playingRooms().length === 0) {
@@ -166,6 +171,10 @@ process.on("SIGTERM", () => {
   draining = true;
   const active = playingRooms().length;
   console.log(`SIGTERM: draining (${active} game(s) running, max wait ${DRAIN_TIMEOUT_MS / 60000} min).`);
+  // Games nobody is connected to are given up rather than waited on.
+  for (const room of [...rooms.values()]) {
+    if (room.abandonedAt) closeRoom(room, "Server updating — the abandoned game was dropped.");
+  }
   for (const room of rooms.values()) {
     logMsg(room, "⚠ Server update pending — current games can finish, but new games can't start.");
   }
@@ -295,6 +304,9 @@ const server = http.createServer((req, res) => {
       opts: r.opts,
       deckCount: r.deck.length,
       pileCount: r.pile.length,
+      watchers: r.spectators.length,
+      // frozen games are held for the rejoin window, then dropped
+      frozenForMs: r.abandonedAt ? now - r.abandonedAt : null,
       players: r.players.map(p => ({
         name: p.name, bot: p.bot, connected: p.connected,
         handCount: p.hand.length,
@@ -492,12 +504,15 @@ function makeRoom(hostWs, hostName, opts) {
     phase: "lobby",           // lobby | playing | over
     opts: sanitizeOpts(opts),
     players: [],              // {id, name, ws|null, bot, hand, faceUp, faceDown, connected}
+    spectators: [],           // sockets watching, not seated
     deck: [], pile: [],
     turn: 0,
     direction: 1,
     sevenActive: false,
     busy: false,              // true during a reveal pause
     timer: null,
+    graceTimer: null,         // running while nobody is connected
+    abandonedAt: null,
     createdAt: Date.now(),
     gameStartedAt: null,
   };
@@ -506,11 +521,16 @@ function makeRoom(hostWs, hostName, opts) {
   return room;
 }
 
-/* Ends a room for everyone in it. Used by the admin dashboard so a game left
- * running for hours can't hold up a server update. Players are returned to the
- * menu (the client reloads) and can immediately start a fresh room. */
+function humansConnected(room) {
+  return room.players.filter(p => !p.bot && p.connected).length;
+}
+
+/* Ends a room for everyone in it — the admin dashboard's Close button, and the
+ * end of the rejoin grace period. Players are returned to the menu (the client
+ * reloads) and can immediately start a fresh room. */
 function closeRoom(room, reason) {
   clearTimeout(room.timer);
+  clearTimeout(room.graceTimer);
   room.phase = "over";
   rooms.delete(room.code);
   for (const p of room.players) {
@@ -519,8 +539,41 @@ function closeRoom(room, reason) {
     p.ws._room = null;
     p.ws._player = null;
   }
+  for (const ws of room.spectators || []) {
+    send(ws, { t: "closed", msg: reason });
+    ws._watching = null;
+  }
   room.players = [];
+  room.spectators = [];
   console.log(`Room ${room.code} closed: ${reason}`);
+}
+
+/* Nobody is connected any more. A game in progress is frozen and held for
+ * ROOM_GRACE_MS so whoever dropped can pick their seat back up — without this a
+ * solo player against bots lost the game the instant their connection blinked.
+ * Lobbies aren't worth holding: there is no game state to come back to. */
+function abandonRoom(room) {
+  clearTimeout(room.timer);            // stop the bots playing to an empty table
+  if (room.phase !== "playing") {
+    closeRoom(room, "Everyone left the room.");
+    return;
+  }
+  room.abandonedAt = Date.now();
+  clearTimeout(room.graceTimer);
+  room.graceTimer = setTimeout(() => {
+    closeRoom(room, "The game was abandoned — nobody came back.");
+  }, ROOM_GRACE_MS);
+  pushState(room);                     // spectators see it freeze
+  setImmediate(checkDrainDone);        // a frozen game no longer blocks an update
+  console.log(`Room ${room.code} abandoned — held for ${Math.round(ROOM_GRACE_MS / 60000)} min.`);
+}
+
+/* Someone came back (or a spectator became irrelevant): unfreeze. */
+function reviveRoom(room) {
+  if (!room.abandonedAt) return;
+  clearTimeout(room.graceTimer);
+  room.graceTimer = null;
+  room.abandonedAt = null;
 }
 
 function sanitizeOpts(o) {
@@ -545,6 +598,7 @@ function send(ws, msg) {
 }
 function broadcast(room, msg) {
   for (const p of room.players) if (!p.bot && p.connected) send(p.ws, msg);
+  for (const ws of room.spectators || []) send(ws, msg);   // rule tests build bare rooms
 }
 function chatMsg(room, from, text) {
   broadcast(room, { t: "chat", from, text });
@@ -558,15 +612,19 @@ function fx(room, kind, data) {
   broadcast(room, Object.assign({ t: "fx", kind }, data));
 }
 
-/* Per-player view of the room */
+/* Per-player view of the room. me === null builds the spectator view: same
+ * public information, no hand for anybody. */
 function viewFor(room, me) {
   return {
     code: room.code,
     phase: room.phase,
     opts: room.opts,
     hostId: room.players.find(p => !p.bot) ? room.players.find(p => !p.bot).id : null,
-    youId: me.id,
-    isHost: isHost(room, me),
+    youId: me ? me.id : null,
+    isHost: me ? isHost(room, me) : false,
+    spectating: !me,
+    watchers: room.spectators.length,
+    frozen: !!room.abandonedAt,
     deckCount: room.deck.length,
     pileCount: room.pile.length,
     pileTop: room.pile.slice(-3),
@@ -581,7 +639,7 @@ function viewFor(room, me) {
       handCount: p.hand.length,
       faceUp: p.faceUp,
       faceDownCount: p.faceDown.length,
-      hand: p === me ? p.hand : undefined,
+      hand: (me && p === me) ? p.hand : undefined,
     })),
   };
 }
@@ -593,6 +651,10 @@ function pushState(room, reveal) {
   for (const p of room.players) {
     if (p.bot || !p.connected) continue;
     send(p.ws, { t: "state", view: viewFor(room, p), reveal: reveal || null });
+  }
+  if (room.spectators && room.spectators.length) {
+    const watcherView = viewFor(room, null);
+    for (const ws of room.spectators) send(ws, { t: "state", view: watcherView, reveal: reveal || null });
   }
 }
 
@@ -646,6 +708,8 @@ function currentPlayer(room) { return room.players[room.turn]; }
 
 function maybeBotTurn(room) {
   if (room.phase !== "playing" || room.busy) return;
+  if (room.abandonedAt) return;        // frozen: nobody is connected to watch
+
   const p = currentPlayer(room);
   if (p.bot || !p.connected) {
     clearTimeout(room.timer);
@@ -768,25 +832,25 @@ wss.on("connection", (ws, req) => {
     }
   });
   ws.on("close", () => {
+    const watching = ws._watching;
+    if (watching) {
+      watching.spectators = watching.spectators.filter(s => s !== ws);
+      ws._watching = null;
+      if (watching.players.length) pushState(watching);   // watcher count changed
+      return;
+    }
     const room = ws._room, p = ws._player;
     if (!room || !p) return;
     p.connected = false;
     p.ws = null;
     if (room.phase === "lobby") {
       room.players = room.players.filter(q => q !== p);
-      if (room.players.filter(q => !q.bot).length === 0) {
-        clearTimeout(room.timer);
-        rooms.delete(room.code);
-        return;
-      }
+      if (room.players.filter(q => !q.bot).length === 0) return abandonRoom(room);
     } else {
-      logMsg(room, `${p.name} disconnected — a bot takes over.`);
+      logMsg(room, `${p.name} disconnected — a bot takes over. They can rejoin with the same name.`);
     }
-    if (room.players.filter(q => !q.bot && q.connected).length === 0) {
-      clearTimeout(room.timer);
-      rooms.delete(room.code);
-      return;
-    }
+    // Hold the game instead of destroying it, so they can come back.
+    if (humansConnected(room) === 0) return abandonRoom(room);
     pushState(room);
     maybeBotTurn(room); // if it was their turn, the bot brain takes it
   });
@@ -805,29 +869,57 @@ function handle(ws, msg) {
       return;
     }
     case "join": {
-      if (room) return;
+      if (room || ws._watching) return;
       const r = rooms.get(String(msg.code || "").toUpperCase());
       if (!r) return send(ws, { t: "error", msg: "Room not found." });
+      const wanted = String(msg.name || "Player").slice(0, 16);
       if (r.phase !== "lobby") {
-        // allow rejoin by name if that seat is disconnected
-        const seat = r.players.find(p => !p.bot && !p.connected && p.name === String(msg.name || "").slice(0, 16));
+        // Rejoin: take back your own seat, which a bot has been covering.
+        // Matched case-insensitively — nobody remembers how they capitalised it.
+        const key = wanted.trim().toLowerCase();
+        const seat = r.players.find(p => !p.bot && !p.connected && p.name.trim().toLowerCase() === key);
         if (seat) {
+          reviveRoom(r);
           seat.connected = true; seat.ws = ws; seat.ip = ws._ip || seat.ip;
           ws._room = r; ws._player = seat;
-          send(ws, { t: "joined", code: r.code });
-          logMsg(r, `${seat.name} reconnected.`);
+          send(ws, { t: "joined", code: r.code, rejoined: true });
+          logMsg(r, `${seat.name} is back — taking their seat from the bot.`);
           pushState(r);
+          maybeBotTurn(r);        // resume a frozen game, or let the bot finish its turn
           return;
         }
-        return send(ws, { t: "error", msg: "Game already in progress." });
+        const taken = r.players.find(p => !p.bot && p.connected && p.name.trim().toLowerCase() === key);
+        if (taken) return send(ws, { t: "error", msg: `"${taken.name}" is already connected in that game.` });
+        return send(ws, { t: "error", msg: "That game is already in progress — you can watch it instead." });
       }
       if (r.players.filter(p => !p.bot).length >= 6) return send(ws, { t: "error", msg: "Room full (6 players max)." });
-      const p = addHuman(r, ws, String(msg.name || "Player"));
+      const p = addHuman(r, ws, wanted);
       send(ws, { t: "joined", code: r.code });
       logMsg(r, `${p.name} joined the room.`);
       pushState(r);
       return;
     }
+    case "spectate": {
+      if (room || ws._watching) return;
+      const r = rooms.get(String(msg.code || "").toUpperCase());
+      if (!r) return send(ws, { t: "error", msg: "Room not found." });
+      ws._watching = r;
+      ws._watchName = String(msg.name || "Someone").slice(0, 16) || "Someone";
+      r.spectators.push(ws);
+      send(ws, { t: "joined", code: r.code, spectator: true });
+      logMsg(r, `${ws._watchName} is watching.`);
+      pushState(r);
+      return;
+    }
+  }
+
+  // Spectators can talk, but that's all they can do.
+  if (ws._watching) {
+    if (msg.t === "chat") {
+      const text = String(msg.text || "").slice(0, 300).trim();
+      if (text) { chatMsg(ws._watching, ws._watchName + " 👁", text); bump("chatMessages"); }
+    }
+    return;
   }
 
   if (!room || !me) return;
