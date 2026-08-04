@@ -616,24 +616,24 @@
   <div class="panel">
     <h2>D R U G S</h2>
     <input type="text" id="name-input" placeholder="Your name" maxlength="16">
-    <button onclick="createRoom()" style="width:220px">Create room</button>
+    <button id="create-btn" style="width:220px">Create room</button>
     <div style="display:flex; gap:8px;">
       <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="width:120px; text-transform:uppercase;">
-      <button class="secondary" onclick="joinRoom()">Join</button>
+      <button id="join-btn" class="secondary">Join</button>
     </div>
-    <button class="secondary" onclick="toggleRules(true)" style="width:220px">How to play</button>
+    <button id="howto-btn" class="secondary" style="width:220px">How to play</button>
     <div id="err"></div>
   </div>
 </div>
 
 <div id="tools">
-  <button id="sound-btn" class="secondary" onclick="toggleSound()" title="Sound on/off">🔊</button>
-  <button id="theme-btn" class="secondary" onclick="cycleTheme()" title="Table theme">🎨</button>
-  <button id="help-btn" class="secondary" onclick="toggleRules(true)" title="Rules">?</button>
+  <button id="sound-btn" class="secondary" title="Sound on/off">🔊</button>
+  <button id="theme-btn" class="secondary" title="Table theme">🎨</button>
+  <button id="help-btn" class="secondary" title="Rules">?</button>
 </div>
 
 <div id="emote-bar"></div>
-<button id="chat-toggle" class="secondary" onclick="toggleChat()" title="Chat">💬<span class="chat-dot"></span></button>
+<button id="chat-toggle" class="secondary" title="Chat">💬<span class="chat-dot"></span></button>
 
 <!-- presentation layers -->
 <div id="fx-layer"></div>
@@ -650,7 +650,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.5.1</span>
+<span id="version-tag">v1.5.2</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -676,7 +676,7 @@
     </ul>
     <h4>Overdose</h4>
     <p>If the configured number of same-rank cards (default 4) pile up in a row on top, the pile overdoses — it's killed like a 10 and the player who completed it goes again.</p>
-    <div class="close-row"><button onclick="toggleRules(false)">Got it</button></div>
+    <div class="close-row"><button id="rules-close-btn">Got it</button></div>
   </div>
 </div>
 
@@ -692,23 +692,23 @@
       <div class="menu-row">
         <label>Bots</label>
         <div class="stepper">
-          <button onclick="stepOpt('bots',-1)">−</button><span class="val" id="opt-bots">0</span><button onclick="stepOpt('bots',1)">+</button>
+          <button data-opt="bots" data-dir="-1">−</button><span class="val" id="opt-bots">0</span><button data-opt="bots" data-dir="1">+</button>
         </div>
       </div>
       <div class="menu-row">
         <label>Decks</label>
         <div class="stepper">
-          <button onclick="stepOpt('decks',-1)">−</button><span class="val" id="opt-decks">1</span><button onclick="stepOpt('decks',1)">+</button>
+          <button data-opt="decks" data-dir="-1">−</button><span class="val" id="opt-decks">1</span><button data-opt="decks" data-dir="1">+</button>
         </div>
       </div>
       <div class="menu-row">
         <label>Overdose</label>
         <div class="stepper">
-          <button onclick="stepOpt('burn',-1)">−</button><span class="val" id="opt-burn">4</span><button onclick="stepOpt('burn',1)">+</button>
+          <button data-opt="burn" data-dir="-1">−</button><span class="val" id="opt-burn">4</span><button data-opt="burn" data-dir="1">+</button>
         </div>
       </div>
       <div class="menu-hint">Overdose: that many of the same rank on the pile kills it, like a 10.</div>
-      <button onclick="ws.send(JSON.stringify({t:'start'}))" style="font-size:1.05rem; padding:10px 40px;">Deal</button>
+      <button id="deal-btn" style="font-size:1.05rem; padding:10px 40px;">Deal</button>
     </div>
     <div class="menu-hint" id="lobby-wait" style="display:none">Waiting for the host to start…</div>
   </div>
@@ -718,7 +718,7 @@
 <div id="overlay" class="overlay">
   <h2 id="overlay-title"></h2>
   <div style="display:flex; gap:12px;">
-    <button id="again-btn" onclick="ws.send(JSON.stringify({t:'again'}))">Back to lobby</button>
+    <button id="again-btn">Back to lobby</button>
   </div>
 </div>
 
@@ -1737,6 +1737,22 @@ function renderTableInto(el, faceUp, faceDownCount, isMe, zone, legal) {
 
 document.getElementById("code-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); joinRoom(); } });
 document.getElementById("name-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); createRoom(); } });
+
+/* All handlers are bound here rather than as inline onclick attributes —
+ * Discord's Activity proxy enforces a CSP that blocks inline handlers. */
+document.getElementById("create-btn").onclick = createRoom;
+document.getElementById("join-btn").onclick = joinRoom;
+document.getElementById("howto-btn").onclick = () => toggleRules(true);
+document.getElementById("rules-close-btn").onclick = () => toggleRules(false);
+document.getElementById("help-btn").onclick = () => toggleRules(true);
+document.getElementById("sound-btn").onclick = toggleSound;
+document.getElementById("theme-btn").onclick = cycleTheme;
+document.getElementById("chat-toggle").onclick = toggleChat;
+document.getElementById("deal-btn").onclick = () => ws.send(JSON.stringify({ t: "start" }));
+document.getElementById("again-btn").onclick = () => ws.send(JSON.stringify({ t: "again" }));
+for (const b of document.querySelectorAll("[data-opt]")) {
+  b.onclick = () => stepOpt(b.dataset.opt, parseInt(b.dataset.dir, 10));
+}
 
 /* ---- Discord Activity ----
    When launched inside Discord (discordsays.com iframe), complete the SDK
