@@ -12,6 +12,9 @@ RUN npm run build && npm prune --omit=dev
 
 ENV PORT=3000
 ENV DATA_DIR=/app/data
+# Stamped by CI so the running container can say which commit it is
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 RUN mkdir -p /app/data && chown node:node /app/data
 EXPOSE 3000
 

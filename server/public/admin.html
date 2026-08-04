@@ -154,7 +154,8 @@ async function refresh() {
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 function renderDash(d) {
-  document.getElementById("uptime").textContent = "Server uptime " + fmtDur(d.uptimeMs);
+  document.getElementById("uptime").textContent =
+    `${d.version || ""}${d.gitSha ? " (" + d.gitSha.slice(0, 7) + ")" : ""} · uptime ${fmtDur(d.uptimeMs)}`;
   document.getElementById("conn-count").textContent = d.connections;
   const warn = document.getElementById("stats-warn");
   warn.style.display = d.statsWritable ? "none" : "block";

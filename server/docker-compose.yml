@@ -29,6 +29,14 @@ services:
       # Set to 0 only if the server is exposed without a reverse proxy in
       # front — otherwise X-Forwarded-For is how the real client IP arrives.
       # - TRUST_PROXY=1
+      # Discord webhook (Server Settings -> Integrations -> Webhooks -> New).
+      # The game posts "update on the way" when it starts draining and
+      # "vX.Y.Z is live" once the new container is serving. Leave unset for none.
+      - DISCORD_WEBHOOK_URL=
+    labels:
+      # Only containers with this label are auto-updated by Watchtower below,
+      # so nothing else on the NAS is touched.
+      - com.centurylinklabs.watchtower.enable=true
     # let running games finish before the container is replaced (graceful drain)
     stop_grace_period: 16m
     volumes:
@@ -39,6 +47,31 @@ services:
       # must be owned by uid 1000:
       #   mkdir -p data && sudo chown -R 1000:1000 data
       # - ./data:/app/data
+    restart: unless-stopped
+
+  # ================= automatic updates =================
+  # Polls GHCR for a new :latest, pulls it and recreates the game container —
+  # so a push to main goes live on its own a few minutes later.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: drugs-watchtower
+    environment:
+      # Only touch containers labelled watchtower.enable=true (see above).
+      - WATCHTOWER_LABEL_ENABLE=true
+      # CRITICAL: Watchtower's own stop timeout, default 10s, overrides the
+      # compose stop_grace_period. Without this it would SIGKILL the server
+      # 10 seconds into a graceful drain and kill games in progress.
+      - WATCHTOWER_TIMEOUT=16m
+      - WATCHTOWER_POLL_INTERVAL=300      # check every 5 minutes
+      - WATCHTOWER_CLEANUP=true           # delete the superseded image
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      # Optional: Watchtower's own "I pulled a new image" notice. Convert a
+      # Discord webhook URL .../webhooks/<id>/<token> to discord://<token>@<id>
+      # - WATCHTOWER_NOTIFICATION_URL=discord://token@id
+      # - WATCHTOWER_NOTIFICATIONS_LEVEL=info
+    volumes:
+      # Watchtower drives the host's Docker; this socket is how.
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
 volumes:

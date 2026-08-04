@@ -59,6 +59,32 @@ cd server
 npm test        # rule tests — special cards, Overdose runs, pile logic
 ```
 
+### Automatic updates
+
+The compose file includes **Watchtower**, which polls GHCR every 5 minutes and
+recreates the game container when a new `:latest` is published — so a push to
+`main` goes live by itself. Two settings matter:
+
+- `WATCHTOWER_LABEL_ENABLE=true` plus the `com.centurylinklabs.watchtower.enable`
+  label on the game means **nothing else on the host is touched**.
+- `WATCHTOWER_TIMEOUT=16m` — Watchtower's stop timeout **overrides** the compose
+  `stop_grace_period`. Its 10-second default would SIGKILL the server ten
+  seconds into a graceful drain and kill games in progress.
+
+### Deploy notifications
+
+Set `DISCORD_WEBHOOK_URL` (Server Settings → Integrations → Webhooks) and the
+game posts to your Discord itself:
+
+- **⏳ on SIGTERM** — an update is coming, and how many games it's waiting for
+- **🚀 on boot** — `vX.Y.Z is live`, with the short commit sha
+
+The boot message is the useful one: it fires when the new container is actually
+serving, which is later than "Watchtower pulled an image" and is the thing you
+want to know. The version is read from the client's own version tag, and the
+commit comes from the `GIT_SHA` build arg stamped by CI. A failed or unreachable
+webhook is logged and ignored — it can never take the game down with it.
+
 ### Stats storage
 
 All-time stats live in `stats.json` inside the container's `/app/data`, saved

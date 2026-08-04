@@ -32,6 +32,35 @@ const ROOM_GRACE_MS = (parseFloat(process.env.ROOM_GRACE_MIN) || 5) * 60 * 1000;
 const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
+// Set at build time by the GitHub Actions workflow (docker build --build-arg).
+const GIT_SHA = process.env.GIT_SHA || null;
+// Optional Discord webhook for deploy notices — see docker-compose.yml.
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || "";
+
+/* The version tag lives in the client where players can see it; read it from
+ * there rather than keeping a second copy in sync. */
+function readVersion() {
+  try {
+    const html = fs.readFileSync(path.join(PUBLIC_DIR, "index.html"), "utf8");
+    const m = html.match(/id="version-tag">([^<]+)</);
+    return m ? m[1].trim() : "unknown";
+  } catch { return "unknown"; }
+}
+const APP_VERSION = readVersion();
+
+/* Fire-and-forget Discord webhook. Never throws, never blocks startup or
+ * shutdown — a failed notification must not take the game with it. */
+function notifyDiscord(content) {
+  if (!DISCORD_WEBHOOK_URL) return Promise.resolve();
+  return fetch(DISCORD_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "Drugs", content, allowed_mentions: { parse: [] } }),
+    signal: AbortSignal.timeout(5000),
+  })
+    .then(r => { if (!r.ok) console.warn(`Discord webhook returned ${r.status}.`); })
+    .catch(e => console.warn(`Discord webhook failed: ${e.message}`));
+}
 
 /* ================= Stats (persisted) ================= */
 const STATS_FILE = path.join(DATA_DIR, "stats.json");
@@ -171,6 +200,9 @@ process.on("SIGTERM", () => {
   draining = true;
   const active = playingRooms().length;
   console.log(`SIGTERM: draining (${active} game(s) running, max wait ${DRAIN_TIMEOUT_MS / 60000} min).`);
+  notifyDiscord(active
+    ? `⏳ Update on the way — waiting for ${active} game${active === 1 ? "" : "s"} to finish first. No new games can start until it's done.`
+    : `⏳ Update on the way — no games running, restarting now.`);
   // Games nobody is connected to are given up rather than waited on.
   for (const room of [...rooms.values()]) {
     if (room.abandonedAt) closeRoom(room, "Server updating — the abandoned game was dropped.");
@@ -326,6 +358,8 @@ const server = http.createServer((req, res) => {
     })).sort((a, b) => a.ageMs - b.ageMs) : [];
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({
+      version: APP_VERSION,
+      gitSha: GIT_SHA,
       uptimeMs: now - SERVER_STARTED,
       connections: wss ? wss.clients.size : 0,
       statsWritable: !statsError,
@@ -999,7 +1033,11 @@ function handle(ws, msg) {
  * unit-tested (see test/rules.test.js). */
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`Drugs server running → http://localhost:${PORT}`);
+    console.log(`Drugs server ${APP_VERSION} running → http://localhost:${PORT}`);
+    // This is the message that actually means "the update is live" — it only
+    // fires once the new container is up and serving.
+    notifyDiscord(`🚀 **Drugs ${APP_VERSION}** is live and taking players.`
+      + (GIT_SHA ? `  ·  build \`${GIT_SHA.slice(0, 7)}\`` : ""));
   });
 }
 
