@@ -14,6 +14,14 @@ services:
       - DISCORD_CLIENT_ID=1533728522395320391
       - DISCORD_CLIENT_SECRET=put-your-regenerated-secret-here
       # - DRAIN_TIMEOUT_MIN=15
+      # Show city/country next to each IP in /admin (one cached lookup per IP
+      # via ip-api.com). Off by default — no outbound calls unless enabled.
+      # - GEOIP=1
+      # IPs blocked from the start; the dashboard's block list adds to this.
+      # - BLOCK_IPS=203.0.113.9,203.0.113.10
+      # Set to 0 only if the server is exposed without a reverse proxy in
+      # front — otherwise X-Forwarded-For is how the real client IP arrives.
+      # - TRUST_PROXY=1
     # let running games finish before the container is replaced (graceful drain)
     stop_grace_period: 16m
     volumes:

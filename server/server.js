@@ -16,6 +16,12 @@ const ADMIN_KEY = process.env.ADMIN_KEY || "drugs-admin";
 // ever live in the environment — never in the repo.
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || null;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || null;
+// Behind the Synology reverse proxy the socket address is the proxy itself, so
+// the real client IP comes from X-Forwarded-For. Set TRUST_PROXY=0 if the
+// server is ever exposed directly (then the header can't be trusted).
+const TRUST_PROXY = process.env.TRUST_PROXY !== "0";
+// Opt-in country/city lookup for admin display (one cached call per new IP).
+const GEOIP = process.env.GEOIP === "1";
 const REVEAL_MS = 2900;   // blind-flip suspense: drumroll, flip, verdict
 const BOT_DELAY_MS = 900;
 const SERVER_STARTED = Date.now();
@@ -64,6 +70,75 @@ function saveStats() {
 }
 setInterval(saveStats, 10000);
 
+/* ================= Client IPs, blocking, geo =================
+ * IPs are kept in memory for live connections only (plus the persisted
+ * block list) — they are never written to stats.json. */
+function normIp(ip) {
+  if (!ip) return "?";
+  return ip.startsWith("::ffff:") ? ip.slice(7) : ip;   // IPv4-mapped IPv6
+}
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const xff = req.headers["x-forwarded-for"];
+    if (xff) {
+      const first = String(xff).split(",")[0].trim();   // leftmost = original client
+      if (first) return normIp(first);
+    }
+    const real = req.headers["x-real-ip"];
+    if (real) return normIp(String(real).trim());
+  }
+  return normIp(req.socket && req.socket.remoteAddress);
+}
+
+const BLOCK_FILE = path.join(DATA_DIR, "blocked.json");
+const blocked = new Set();
+try {
+  for (const ip of JSON.parse(fs.readFileSync(BLOCK_FILE, "utf8"))) blocked.add(ip);
+} catch { /* none yet */ }
+// Seed from the environment too, so a bad actor can be shut out via compose.
+for (const ip of String(process.env.BLOCK_IPS || "").split(",").map(s => s.trim()).filter(Boolean)) blocked.add(ip);
+
+function saveBlocked() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(BLOCK_FILE, JSON.stringify([...blocked], null, 2));
+    return null;
+  } catch (e) {
+    console.warn(`Cannot write ${BLOCK_FILE} (${e.code}) — the block list is in-memory only.`);
+    return `${e.code} writing ${BLOCK_FILE}`;
+  }
+}
+
+/* Drops every live socket from an IP, so blocking takes effect immediately. */
+function kickIp(ip) {
+  let n = 0;
+  if (!wss) return n;
+  for (const ws of wss.clients) {
+    if (ws._ip === ip) {
+      send(ws, { t: "error", msg: "You have been disconnected by the server." });
+      ws.close(4003, "blocked");
+      n++;
+    }
+  }
+  return n;
+}
+
+const PRIVATE_IP = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|f[cd])/i;
+const geoCache = new Map();   // ip -> "City, Country" | null
+function geoFor(ip) {
+  return geoCache.get(ip) || null;
+}
+function lookupGeo(ip) {
+  if (!GEOIP || !ip || ip === "?" || geoCache.has(ip) || PRIVATE_IP.test(ip)) return;
+  geoCache.set(ip, null);   // reserve, so we only ever ask once per IP
+  fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,city`)
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.status === "success") geoCache.set(ip, [d.city, d.country].filter(Boolean).join(", "));
+    })
+    .catch(() => { /* lookup is cosmetic — ignore failures */ });
+}
+
 /* ================= Graceful drain =================
  * On SIGTERM (docker stop / compose up with a new image) we stop accepting
  * new rooms and new deals, let running games finish, then exit. Needs a
@@ -106,6 +181,13 @@ const server = http.createServer((req, res) => {
   if (file === "/") file = "/index.html";
   if (file === "/admin") file = "/admin.html";
 
+  // Blocked visitors get nothing but the admin pages (key-protected anyway, so
+  // you can still unblock yourself if you fat-finger your own address).
+  if (blocked.has(clientIp(req)) && !file.startsWith("/admin")) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    return res.end("Blocked.");
+  }
+
   if (file === "/config.json") {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ discordClientId: DISCORD_CLIENT_ID }));
@@ -144,6 +226,42 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (file === "/admin/block") {
+    if (url.searchParams.get("key") !== ADMIN_KEY) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "bad key" }));
+    }
+    const ip = String(url.searchParams.get("ip") || "").trim();
+    const action = url.searchParams.get("action") === "remove" ? "remove" : "add";
+    if (!ip || ip === "?") {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "no ip" }));
+    }
+    let kicked = 0;
+    if (action === "add") { blocked.add(ip); kicked = kickIp(ip); console.log(`Admin blocked ${ip} (${kicked} socket(s) dropped).`); }
+    else { blocked.delete(ip); console.log(`Admin unblocked ${ip}.`); }
+    const err = saveBlocked();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ ok: true, action, ip, kicked, blocked: [...blocked], saveError: err }));
+  }
+
+  if (file === "/admin/close") {
+    if (url.searchParams.get("key") !== ADMIN_KEY) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "bad key" }));
+    }
+    const code = String(url.searchParams.get("code") || "").toUpperCase();
+    const targets = code === "ALL" ? [...rooms.values()] : [rooms.get(code)].filter(Boolean);
+    if (!targets.length) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "no such room" }));
+    }
+    for (const r of targets) closeRoom(r, "An admin closed this game.");
+    checkDrainDone();   // closing the last game lets a pending update finish
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ ok: true, closed: targets.map(r => r.code) }));
+  }
+
   if (file === "/admin/data.json") {
     if (url.searchParams.get("key") !== ADMIN_KEY) {
       res.writeHead(403, { "Content-Type": "application/json" });
@@ -162,8 +280,19 @@ const server = http.createServer((req, res) => {
         name: p.name, bot: p.bot, connected: p.connected,
         handCount: p.hand.length,
         cardsLeft: p.hand.length + p.faceUp.length + p.faceDown.length,
+        ip: p.bot ? null : (p.ip || null),
+        geo: p.bot ? null : geoFor(p.ip),
       })),
     }));
+    // Every live socket, including people sitting on the menu with no room yet.
+    const connList = wss ? [...wss.clients].map(ws => ({
+      ip: ws._ip || "?",
+      geo: geoFor(ws._ip),
+      name: ws._player ? ws._player.name : null,
+      room: ws._room ? ws._room.code : null,
+      ageMs: now - (ws._connectedAt || now),
+      ua: ws._ua || null,
+    })).sort((a, b) => a.ageMs - b.ageMs) : [];
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({
       uptimeMs: now - SERVER_STARTED,
@@ -172,6 +301,10 @@ const server = http.createServer((req, res) => {
       statsError,
       statsFile: STATS_FILE,
       rooms: roomList,
+      connectionList: connList,
+      blocked: [...blocked],
+      geoEnabled: GEOIP,
+      trustProxy: TRUST_PROXY,
       stats,
     }));
   }
@@ -351,6 +484,23 @@ function makeRoom(hostWs, hostName, opts) {
   return room;
 }
 
+/* Ends a room for everyone in it. Used by the admin dashboard so a game left
+ * running for hours can't hold up a server update. Players are returned to the
+ * menu (the client reloads) and can immediately start a fresh room. */
+function closeRoom(room, reason) {
+  clearTimeout(room.timer);
+  room.phase = "over";
+  rooms.delete(room.code);
+  for (const p of room.players) {
+    if (p.bot || !p.ws) continue;
+    send(p.ws, { t: "closed", msg: reason });
+    p.ws._room = null;
+    p.ws._player = null;
+  }
+  room.players = [];
+  console.log(`Room ${room.code} closed: ${reason}`);
+}
+
 function sanitizeOpts(o) {
   const clamp = (v, lo, hi, d) => Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : d;
   return {
@@ -361,7 +511,7 @@ function sanitizeOpts(o) {
 }
 
 function addHuman(room, ws, name) {
-  const p = { id: nextPlayerId++, name: name.slice(0, 16) || "Player", ws, bot: false, connected: true, hand: [], faceUp: [], faceDown: [] };
+  const p = { id: nextPlayerId++, name: name.slice(0, 16) || "Player", ws, bot: false, connected: true, ip: ws && ws._ip || null, hand: [], faceUp: [], faceDown: [] };
   room.players.push(p);
   ws._room = room;
   ws._player = p;
@@ -576,7 +726,15 @@ setInterval(() => {
   }
 }, 30000);
 
-wss.on("connection", ws => {
+wss.on("connection", (ws, req) => {
+  ws._ip = clientIp(req);
+  ws._ua = (req.headers["user-agent"] || "").slice(0, 120);
+  ws._connectedAt = Date.now();
+  if (blocked.has(ws._ip)) {
+    send(ws, { t: "error", msg: "You have been blocked from this server." });
+    return ws.close(4003, "blocked");
+  }
+  lookupGeo(ws._ip);
   ws._dead = false;
   ws.on("pong", () => { ws._dead = false; });
   ws.on("message", raw => {
@@ -632,7 +790,7 @@ function handle(ws, msg) {
         // allow rejoin by name if that seat is disconnected
         const seat = r.players.find(p => !p.bot && !p.connected && p.name === String(msg.name || "").slice(0, 16));
         if (seat) {
-          seat.connected = true; seat.ws = ws;
+          seat.connected = true; seat.ws = ws; seat.ip = ws._ip || seat.ip;
           ws._room = r; ws._player = seat;
           send(ws, { t: "joined", code: r.code });
           logMsg(r, `${seat.name} reconnected.`);

@@ -46,6 +46,9 @@
     border: none; border-radius: 8px; cursor: pointer;
     background: var(--gold); color: #333; font-weight: 600;
   }
+  button.danger { background: #b23b3b; color: #fff; }
+  button.mini { font-size: .75rem; padding: 3px 10px; }
+  .ip { font-family: ui-monospace, Consolas, monospace; font-size: .82rem; }
   #err { color: #ef9a9a; text-align: center; min-height: 1.2em; }
   #dash { display: none; }
   .muted { opacity: .55; }
@@ -66,11 +69,32 @@
   <h2>Live — <span id="conn-count">0</span> connection(s)</h2>
   <div class="cardbox">
     <table>
-      <thead><tr><th>Room</th><th>Phase</th><th>Players</th><th>Room age</th><th>Game time</th><th>Deck / Pile</th><th>Options</th></tr></thead>
+      <thead><tr><th>Room</th><th>Phase</th><th>Players</th><th>Room age</th><th>Game time</th><th>Deck / Pile</th><th>Options</th><th></th></tr></thead>
       <tbody id="rooms"></tbody>
     </table>
     <div class="muted" id="no-rooms" style="padding:8px 10px;">No active rooms.</div>
+    <div style="padding:10px 10px 0"><button class="danger" id="close-all">Close all games</button>
+      <span class="muted" style="font-size:.78rem;margin-left:8px">Players are told and returned to the menu — use before a server update.</span></div>
     <div class="warn" id="stats-warn" style="display:none"></div>
+  </div>
+
+  <h2>Connections</h2>
+  <div class="cardbox">
+    <table>
+      <thead><tr><th>IP</th><th>Location</th><th>Player</th><th>Room</th><th>Connected</th><th>Client</th><th></th></tr></thead>
+      <tbody id="conns"></tbody>
+    </table>
+    <div class="muted" id="no-conns" style="padding:8px 10px;">Nobody connected.</div>
+    <div class="muted" id="geo-note" style="padding:8px 10px;font-size:.75rem"></div>
+  </div>
+
+  <h2>Blocked IPs</h2>
+  <div class="cardbox">
+    <div id="blocked"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <input type="text" id="block-ip" placeholder="IP to block" style="width:200px;font-size:.9rem">
+      <button id="block-add">Block</button>
+    </div>
   </div>
 
   <h2>All-time stats</h2>
@@ -147,14 +171,37 @@ function renderDash(d) {
     const players = r.players.map(p => {
       const cls = p.bot ? "bot" : (p.connected ? "on" : "off");
       const extra = r.phase === "playing" ? ` (${p.cardsLeft})` : "";
-      return `<span class="pill ${cls}">${esc(p.name)}${extra}</span>`;
+      const tip = p.ip ? ` title="${esc(p.ip + (p.geo ? " — " + p.geo : ""))}"` : "";
+      return `<span class="pill ${cls}"${tip}>${esc(p.name)}${extra}</span>`;
     }).join("");
     tr.innerHTML = `<td><b>${r.code}</b></td><td>${r.phase}</td><td>${players}</td>
       <td>${fmtDur(r.ageMs)}</td><td>${fmtDur(r.gameAgeMs)}</td>
       <td>${r.deckCount} / ${r.pileCount}</td>
-      <td class="muted">${r.opts.decks} deck, OD ${r.opts.burn || "off"}</td>`;
+      <td class="muted">${r.opts.decks} deck, OD ${r.opts.burn || "off"}</td>
+      <td><button class="mini danger" data-close="${r.code}">Close</button></td>`;
     tb.appendChild(tr);
   }
+
+  const ct = document.getElementById("conns");
+  const conns = d.connectionList || [];
+  ct.innerHTML = conns.map(c => {
+    const discord = c.ua && /discord/i.test(c.ua) ? "Discord" : "browser";
+    return `<tr><td class="ip">${esc(c.ip)}</td><td class="muted">${esc(c.geo || "—")}</td>
+      <td>${c.name ? esc(c.name) : '<span class="muted">menu</span>'}</td>
+      <td>${c.room ? "<b>" + esc(c.room) + "</b>" : "—"}</td>
+      <td>${fmtDur(c.ageMs)}</td><td class="muted">${discord}</td>
+      <td><button class="mini danger" data-block="${esc(c.ip)}">Block</button></td></tr>`;
+  }).join("");
+  document.getElementById("no-conns").style.display = conns.length ? "none" : "block";
+  document.getElementById("geo-note").textContent = d.geoEnabled
+    ? (d.trustProxy ? "" : "TRUST_PROXY=0 — showing socket addresses, not X-Forwarded-For.")
+    : "Location lookup is off. Set GEOIP=1 in docker-compose.yml to resolve city/country (one cached call per IP to ip-api.com).";
+
+  const bl = d.blocked || [];
+  document.getElementById("blocked").innerHTML = bl.length
+    ? bl.map(ip => `<span class="pill off ip" style="margin-bottom:6px">${esc(ip)}
+        <button class="mini" data-unblock="${esc(ip)}" style="margin-left:6px">Unblock</button></span>`).join("")
+    : `<span class="muted">Nobody blocked.</span>`;
 
   const s = d.stats;
   const entries = [
@@ -183,6 +230,44 @@ function renderDash(d) {
     ? wins.map(([n, w]) => `<tr><td>${esc(n)}</td><td>${w}</td></tr>`).join("")
     : `<tr><td class="muted">No finished games yet.</td></tr>`;
 }
+
+async function act(path, params) {
+  const q = new URLSearchParams(Object.assign({ key }, params));
+  try {
+    const res = await fetch(path + "?" + q);
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) { document.getElementById("err").textContent = out.error || ("Failed: " + res.status); return null; }
+    document.getElementById("err").textContent = out.saveError ? "Block list not saved: " + out.saveError : "";
+    refresh();
+    return out;
+  } catch {
+    document.getElementById("err").textContent = "Server unreachable.";
+    return null;
+  }
+}
+
+/* Delegated so the buttons keep working across the 2s re-render. */
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.close) {
+    if (confirm(`Close room ${b.dataset.close}? Everyone in it is dropped back to the menu.`))
+      act("/admin/close", { code: b.dataset.close });
+  } else if (b.dataset.block) {
+    if (confirm(`Block ${b.dataset.block}? They are disconnected immediately and can't reconnect.`))
+      act("/admin/block", { ip: b.dataset.block, action: "add" });
+  } else if (b.dataset.unblock) {
+    act("/admin/block", { ip: b.dataset.unblock, action: "remove" });
+  }
+});
+document.getElementById("close-all").onclick = () => {
+  if (confirm("Close every active game?")) act("/admin/close", { code: "ALL" });
+};
+document.getElementById("block-add").onclick = () => {
+  const el = document.getElementById("block-ip");
+  const ip = el.value.trim();
+  if (ip) act("/admin/block", { ip, action: "add" }).then(() => { el.value = ""; });
+};
 
 document.getElementById("key").addEventListener("keydown", e => { if (e.key === "Enter") tryKey(); });
 if (key) { document.getElementById("key").value = key; refresh(); }

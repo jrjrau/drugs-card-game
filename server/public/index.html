@@ -650,7 +650,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.5.2</span>
+<span id="version-tag">v1.6.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -1308,6 +1308,13 @@ function connect() {
       case "error":
         document.getElementById("err").textContent = msg.msg;
         sysChat("⚠ " + msg.msg);
+        break;
+      // An admin ended the room — say so, then drop back to a clean menu.
+      case "closed":
+        sysChat("⚠ " + msg.msg);
+        banner("Game closed", "bad");
+        toast(msg.msg, "bad", true);
+        setTimeout(() => location.reload(), 3500);
         break;
     }
   };

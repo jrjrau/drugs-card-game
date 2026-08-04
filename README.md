@@ -27,7 +27,7 @@ Unlike standard Palace, the face-up and face-down cards are **dealt randomly** �
 - 💬 **In-game chat** with game events
 - 🤖 **Server-authoritative rules** — nobody can peek or cheat
 - 🎛️ **Configurable games** — 1–4 decks, bot count, Overdose threshold
-- 📊 **Admin dashboard** (`/admin`) — live rooms, connections, and all-time stats (aces played, piles picked up, wins…)
+- 📊 **Admin dashboard** (`/admin`) — live rooms, connections with IPs, close-a-game and IP blocking, plus all-time stats (aces played, piles picked up, wins…)
 - 🃏 **Solo mode** — a standalone single-file version vs bots ([index.html](index.html))
 - 🔁 Reconnect support — drop out and rejoin with the same name; a bot covers your seat meanwhile
 
@@ -71,6 +71,26 @@ mkdir -p data && sudo chown -R 1000:1000 data
 
 The admin dashboard warns (with the exact error) if saving fails, and resumes
 by itself once permissions are fixed — no restart needed.
+
+### Moderation (admin dashboard)
+
+The **Connections** table lists every live socket with its IP, how long it's
+been connected, whether it came from Discord, and which room it's in.
+
+- **Block** drops that IP's sockets immediately and refuses the game page and
+  any new socket from it. Blocks persist in `blocked.json` next to the stats,
+  survive restarts, and can be lifted from the same page. `/admin` itself stays
+  reachable from a blocked address, so you can't lock yourself out.
+- **Close** ends a single game (or *Close all*) — players get a "game closed"
+  message and land back on the menu. Use it before a server update so a table
+  left running for hours doesn't hold up the graceful drain.
+- Pre-seed blocks without the UI via `BLOCK_IPS=1.2.3.4,5.6.7.8`.
+
+IPs come from `X-Forwarded-For` (the reverse proxy's real-client header); set
+`TRUST_PROXY=0` if the server is ever exposed directly. Live IPs are held in
+memory only — never written to `stats.json`. Set `GEOIP=1` to show city and
+country per IP (one cached lookup per address via ip-api.com; off by default,
+so the server makes no outbound calls unless you ask for it).
 
 ### Discord Activity
 
