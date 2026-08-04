@@ -1518,6 +1518,7 @@ function connect() {
         sysChat(spectating ? "You're watching room " + msg.code + " — you can chat, but not play."
                            : "You're in room " + msg.code);
         if (msg.rejoined) { toast("Welcome back — you've got your seat back.", "good", true); banner("Back in!", "cool"); }
+        if (linkCode) exitJoiningMode();   // the link did its job — reset the home screen
         setRoomUrl(msg.code);   // the address bar is the mid-game share link
         break;
       case "state":
@@ -2156,11 +2157,14 @@ document.getElementById("link-watch-btn").onclick = () => {
   b.style.display = "";
   let revert = null;
   b.onclick = () => {
-    navigator.clipboard.writeText(shareUrl(view && view.code)).then(
-      () => { b.textContent = "✅ Link copied!"; },
-      () => { b.textContent = "❌ Copy failed — share the code instead"; });
-    clearTimeout(revert);
-    revert = setTimeout(() => { b.textContent = "🔗 Copy link"; }, 2000);
+    if (!view || !view.code) return;
+    navigator.clipboard.writeText(shareUrl(view.code))
+      .then(() => { b.textContent = "✅ Link copied!"; },
+            () => { b.textContent = "❌ Copy failed — share the code instead"; })
+      .then(() => {   // revert only after the outcome has been visible
+        clearTimeout(revert);
+        revert = setTimeout(() => { b.textContent = "🔗 Copy link"; }, 2000);
+      });
   };
 })();
 
