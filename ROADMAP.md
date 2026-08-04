@@ -17,10 +17,10 @@
 - [x] Visible version tag for deploy checks
 - [x] GitHub Actions → GHCR automated container builds
 - [x] Graceful drain: running games finish before the container updates
+- [x] Your-turn browser notification + flashing tab title for tabbed-away players
 
 ## Next up 🚧
 
-- [ ] **Your-turn browser notification** — so tabbed-away players don't stall the game
 - [ ] Port the v1.3.0 presentation layer to the solo `index.html` (currently multiplayer-only)
 - [ ] **Mobile portrait layout** — someone is always on a phone
 - [ ] **Series scoring** — traditional style: track the loser of each hand ("the Drugs") across a room session, with a scoreboard
