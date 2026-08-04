@@ -634,6 +634,7 @@
     <div class="pile-area">
       <div class="zone-label">Pile</div>
       <div class="pile-stack" id="pile-stack"></div>
+      <span class="count-badge" id="pile-count">0</span>
       <span id="effective-note"></span>
     </div>
   </div>
@@ -1922,6 +1923,7 @@ function render() {
   ds.innerHTML = view.deckCount ? "" : `<div class="empty-slot"></div>`;
   if (view.deckCount) ds.appendChild(cardEl(null, false));
   document.getElementById("deck-count").textContent = view.deckCount;
+  document.getElementById("pile-count").textContent = view.pileCount;
 
   const ps = document.getElementById("pile-stack");
   ps.innerHTML = "";
