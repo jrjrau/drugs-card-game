@@ -645,6 +645,7 @@
 
 <div id="tools">
   <button id="sound-btn" class="secondary" title="Sound on/off">🔊</button>
+  <button id="notify-btn" class="secondary" title="Your-turn notifications">🔕</button>
   <button id="theme-btn" class="secondary" title="Table theme">🎨</button>
   <button id="help-btn" class="secondary" title="Rules">?</button>
 </div>
@@ -667,7 +668,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.7.0</span>
+<span id="version-tag">v1.8.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -922,6 +923,77 @@ function toggleSound() {
   const b = document.getElementById("sound-btn");
   b.textContent = on ? "🔊" : "🔇";
   b.classList.toggle("off", !on);
+}
+
+/* ---- your-turn notifications ----
+   Two layers: the tab title flashes whenever it's your turn and the tab is
+   hidden (no permission needed), and an opt-in system notification via the
+   🔔 tool button. Inside Discord's Activity iframe neither the Notification
+   API nor a visible tab title exists, so the button is hidden there. */
+const notifier = (() => {
+  let on = localStorage.getItem("drugsNotify") === "on";
+  let flashTimer = null;
+  const baseTitle = document.title;
+
+  const supported = () => "Notification" in window && !inDiscord;
+
+  function stopFlash() {
+    if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+    document.title = baseTitle;
+  }
+  function startFlash() {
+    if (flashTimer) return;
+    let tick = true;
+    document.title = "🔔 YOUR TURN!";
+    flashTimer = setInterval(() => {
+      tick = !tick;
+      document.title = tick ? "🔔 YOUR TURN!" : baseTitle;
+    }, 1000);
+  }
+  function systemNotify() {
+    if (!on || !supported() || Notification.permission !== "granted") return;
+    try {
+      const n = new Notification("Your turn!", {
+        body: "The table is waiting for you.",
+        icon: "icon-256.png",
+        tag: "drugs-your-turn",   // replaces rather than stacks
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch (e) {
+      // some platforms only allow notifications via a service worker
+      console.warn("Notification failed:", e);
+    }
+  }
+
+  return {
+    supported,
+    isOn: () => on && supported() && Notification.permission === "granted",
+    async toggle() {
+      if (on) {
+        on = false;
+      } else {
+        if (Notification.permission === "default") await Notification.requestPermission();
+        if (Notification.permission === "granted") on = true;
+        else toast("Notifications are blocked in the browser settings", "bad");
+      }
+      localStorage.setItem("drugsNotify", on ? "on" : "off");
+      return on;
+    },
+    turnStarted() { if (document.hidden) { startFlash(); systemNotify(); } },
+    turnEnded: stopFlash,
+  };
+})();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) notifier.turnEnded();
+});
+
+async function toggleNotify() {
+  const on = await notifier.toggle();
+  const b = document.getElementById("notify-btn");
+  b.textContent = on ? "🔔" : "🔕";
+  b.classList.toggle("off", !on);
+  toast(on ? "Your-turn notifications on" : "Your-turn notifications off");
+  sfx.pop();
 }
 
 /* ---- table themes ---- */
@@ -1645,7 +1717,8 @@ function render() {
   const isMyTurn = view.phase === "playing" && view.turnId === view.youId && !reveal;
   document.getElementById("player-zone").classList.toggle("my-turn", isMyTurn);
   document.getElementById("status").classList.toggle("my-turn", isMyTurn);
-  if (isMyTurn && !prevMyTurn) { sfx.ding(); toast("Your turn!", "good"); }
+  if (isMyTurn && !prevMyTurn) { sfx.ding(); toast("Your turn!", "good"); notifier.turnStarted(); }
+  if (!isMyTurn && prevMyTurn) notifier.turnEnded();
   prevMyTurn = isMyTurn;
 
   // opponents
@@ -1810,6 +1883,7 @@ document.getElementById("howto-btn").onclick = () => toggleRules(true);
 document.getElementById("rules-close-btn").onclick = () => toggleRules(false);
 document.getElementById("help-btn").onclick = () => toggleRules(true);
 document.getElementById("sound-btn").onclick = toggleSound;
+document.getElementById("notify-btn").onclick = toggleNotify;
 document.getElementById("theme-btn").onclick = cycleTheme;
 document.getElementById("chat-toggle").onclick = toggleChat;
 document.getElementById("deal-btn").onclick = () => ws.send(JSON.stringify({ t: "start" }));
@@ -1872,6 +1946,12 @@ applyTheme(localStorage.getItem("drugsTheme") || "classic");
   const b = document.getElementById("sound-btn");
   b.textContent = sfx.isOn() ? "🔊" : "🔇";
   b.classList.toggle("off", !sfx.isOn());
+})();
+(function initNotifyBtn() {
+  const b = document.getElementById("notify-btn");
+  if (!notifier.supported()) { b.style.display = "none"; return; }
+  b.textContent = notifier.isOn() ? "🔔" : "🔕";
+  b.classList.toggle("off", !notifier.isOn());
 })();
 // browsers only allow audio after a gesture
 window.addEventListener("pointerdown", () => sfx.unlock(), { once: true });
