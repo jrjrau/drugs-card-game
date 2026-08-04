@@ -425,6 +425,44 @@
     animation: runpop .3s ease;
   }
   .run-badge.hot { background: #ff7043; color: #fff; }
+
+  /* ---- ×3 and up: the pile catches fire ----
+   * Two flame tongues licking up behind the badge, each with its own wobble so
+   * they don't move in lockstep, plus a flickering glow on the badge itself. */
+  .run-badge.fire {
+    background: linear-gradient(180deg, #ffe066 0%, #ff9f1a 42%, #e8341c 100%);
+    color: #fff; text-shadow: 0 1px 2px rgba(120,20,0,.75);
+    box-shadow: 0 0 10px rgba(255,130,20,.9), 0 0 24px rgba(255,60,0,.55), 0 2px 6px rgba(0,0,0,.5);
+    animation: runpop .3s ease, fireglow 1.15s ease-in-out infinite alternate;
+  }
+  .run-badge.fire::before, .run-badge.fire::after {
+    content: ""; position: absolute; z-index: -1;
+    bottom: 55%; width: 13px; height: 22px;
+    background: radial-gradient(ellipse at 50% 80%, #fff6c4 0%, #ffc233 35%, #ff6a00 65%, rgba(226,43,16,0) 100%);
+    border-radius: 50% 50% 46% 46% / 68% 68% 32% 32%;
+    filter: blur(.6px);
+    transform-origin: 50% 100%;
+  }
+  .run-badge.fire::before { left: 12%; animation: flamelick .62s ease-in-out infinite alternate; }
+  .run-badge.fire::after  { right: 12%; height: 17px; animation: flamelick .48s .16s ease-in-out infinite alternate; }
+  @keyframes flamelick {
+    0%   { transform: translateY(2px) scaleY(.78) scaleX(1.06) skewX(-5deg); opacity: .75; }
+    100% { transform: translateY(-5px) scaleY(1.22) scaleX(.9) skewX(6deg); opacity: 1; }
+  }
+  @keyframes fireglow {
+    0%   { box-shadow: 0 0 8px rgba(255,130,20,.75), 0 0 18px rgba(255,60,0,.4), 0 2px 6px rgba(0,0,0,.5); }
+    100% { box-shadow: 0 0 15px rgba(255,150,40,1), 0 0 34px rgba(255,70,0,.7), 0 2px 6px rgba(0,0,0,.5); }
+  }
+  /* one card away from an Overdose — brighter, faster, angrier */
+  .run-badge.fire.hot {
+    background: linear-gradient(180deg, #fff3b0 0%, #ff7a18 38%, #c1120a 100%);
+    animation: runpop .3s ease, fireglow .42s ease-in-out infinite alternate;
+  }
+  .run-badge.fire.hot::before { animation-duration: .34s; }
+  .run-badge.fire.hot::after  { animation-duration: .27s; }
+  @media (prefers-reduced-motion: reduce) {
+    .run-badge.fire, .run-badge.fire::before, .run-badge.fire::after { animation: none; }
+  }
   @keyframes floatlabel {
     0% { transform: translate(-50%, 12px); opacity: 0; }
     22% { transform: translate(-50%, -8px); opacity: 1; }
@@ -668,7 +706,7 @@
   </div>
 </div>
 
-<span id="version-tag">v1.8.1</span>
+<span id="version-tag">v1.9.0</span>
 
 <!-- rules -->
 <div id="rules" class="overlay">
@@ -692,8 +730,9 @@
       <li><b>10</b> — kills the pile and you go again. Play it on anything.</li>
       <li><b>J</b> — reverses the play order (until the next Jack). Must be played legally like a normal card; playing several Jacks at once still reverses just once.</li>
     </ul>
+    <p class="menu-hint" style="margin-top:2px">Each special has its own face, so you can spot them without remembering the list: the black bomb <b>10</b>, the teal <b>RESET</b> 2, the frosted <b>ANY</b> 3, the amber <b>MAX 7</b>, and the violet <b>REVERSE</b> Jack.</p>
     <h4>Overdose</h4>
-    <p>If the configured number of same-rank cards (default 4) pile up in a row on top, the pile overdoses — it's killed like a 10 and the player who completed it goes again.</p>
+    <p>If the configured number of same-rank cards (default 4) pile up in a row on top, the pile overdoses — it's killed like a 10 and the player who completed it goes again. From <b>three</b> of a kind the pile catches fire — when the badge is blazing, one more of that rank kills it.</p>
     <h4>Dropping out and watching</h4>
     <p>Lose your connection and a bot covers your seat — rejoin with the <b>same room code and name</b> (capitalisation doesn't matter) and you get your cards back. If <i>everybody</i> drops, the game pauses instead of ending, and waits a few minutes for someone to return.</p>
     <p>Not playing? Enter a room code and hit <b>👁 Watch</b> to spectate. You'll see the table and can chat, but not the players' hands.</p>
@@ -749,19 +788,123 @@
 const RANK_LABEL = r => ({11:"J",12:"Q",13:"K",14:"A"}[r] || String(r));
 const REVEAL_MS = 2900;   // must match the server's reveal pause
 
+/* ---- special card faces ----
+ * Each special gets its own palette, a motif and a caption band, so what a card
+ * DOES is readable at a glance instead of having to remember the rules. Same
+ * frosted-glass language as the mirror card the 3 turns into on the pile.
+ * Gradient ids are per-rank and identical between copies, so duplicates across
+ * cards in the document resolve to the same definition harmlessly. */
+const SPECIAL_ART = {
+  2:  { caption: "RESET",   top: "#eafaff", bot: "#c3e9f7", edge: "#4fb6dd", ink: "#0b6a86" },
+  3:  { caption: "ANY",     top: "#f4fcff", bot: "#d8effa", edge: "#7fd7ff", ink: "#1f6f8f" },
+  7:  { caption: "MAX 7",   top: "#fff8e8", bot: "#ffe4b2", edge: "#e0982c", ink: "#9a5600" },
+  10: { caption: "KILLS",   top: "#262b36", bot: "#0a0c11", edge: "#f0b429", ink: "#ffe08a", dark: true },
+  11: { caption: "REVERSE", top: "#f7f1ff", bot: "#dfcbfb", edge: "#9a6ce0", ink: "#57288c" },
+};
+
+/* the bomb: fuse, spark and a burst waiting to happen */
+function motifBomb(ink) {
+  const rays = [0, 45, 90, 135, 180, 225, 270, 315]
+    .map(a => {
+      const rad = a * Math.PI / 180;
+      const x1 = 37 + Math.cos(rad) * 17, y1 = 63 + Math.sin(rad) * 17;
+      const x2 = 37 + Math.cos(rad) * 22, y2 = 63 + Math.sin(rad) * 22;
+      return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+    }).join("");
+  return `
+    <radialGradient id="bombbody" cx="36%" cy="30%" r="78%">
+      <stop offset="0%" stop-color="#3a4152"/><stop offset="70%" stop-color="#15181f"/>
+      <stop offset="100%" stop-color="#05070a"/>
+    </radialGradient>
+    <g stroke="${ink}" stroke-opacity=".38" stroke-width="1.3" stroke-linecap="round">${rays}</g>
+    <circle cx="37" cy="63" r="13" fill="url(#bombbody)" stroke="${ink}" stroke-width="1.6"/>
+    <circle cx="32" cy="58" r="3.4" fill="#ffffff" fill-opacity=".28"/>
+    <rect x="33.5" y="46.5" width="7" height="5" rx="1.3" fill="${ink}"/>
+    <path d="M40 48 q10 -5 6.5 -13" fill="none" stroke="#ffb74d" stroke-width="1.8" stroke-linecap="round"/>
+    <g stroke="#fff6d5" stroke-width="1.5" stroke-linecap="round">
+      <line x1="46.5" y1="30" x2="46.5" y2="25"/><line x1="43" y1="32.5" x2="39.5" y2="30"/>
+      <line x1="50" y1="32.5" x2="53.5" y2="30"/><line x1="44.5" y1="27" x2="42" y2="24"/>
+      <line x1="48.5" y1="27" x2="51" y2="24"/>
+    </g>
+    <circle cx="46.5" cy="33" r="2.6" fill="#fff3c4"/>`;
+}
+/* the reset: a loop arrow winding back to zero */
+function motifReset(ink) {
+  return `
+    <path d="M49.5 68.5 A13.5 13.5 0 1 1 50.5 55" fill="none" stroke="${ink}"
+          stroke-width="3.2" stroke-linecap="round"/>
+    <path d="M50.5 47 l1.5 9 l-8.5 -1.5 Z" fill="${ink}"/>
+    <circle cx="37" cy="63" r="5.6" fill="none" stroke="${ink}" stroke-opacity=".45" stroke-width="1.8"/>`;
+}
+/* the cap: a lid pressed down over everything above 7 */
+function motifCap(ink) {
+  const arrow = x => `<g stroke="${ink}" stroke-width="2.6" stroke-linecap="round">
+      <line x1="${x}" y1="60" x2="${x}" y2="70"/>
+      <line x1="${x}" y1="71.5" x2="${x - 4.5}" y2="66.5"/>
+      <line x1="${x}" y1="71.5" x2="${x + 4.5}" y2="66.5"/></g>`;
+  return `
+    <rect x="17" y="49" width="40" height="5" rx="2.5" fill="${ink}"/>
+    <rect x="17" y="45" width="40" height="2" rx="1" fill="${ink}" fill-opacity=".35"/>
+    ${arrow(28)}${arrow(46)}`;
+}
+/* the reverse: two arcs chasing each other the other way round */
+function motifReverse(ink) {
+  return `
+    <g fill="none" stroke="${ink}" stroke-width="3" stroke-linecap="round">
+      <path d="M23 60 Q37 44 51 60"/>
+      <path d="M51 69 Q37 85 23 69"/>
+    </g>
+    <path d="M51 55 l4.5 7 l-9 1 Z" fill="${ink}"/>
+    <path d="M23 74 l-4.5 -7 l9 -1 Z" fill="${ink}"/>`;
+}
+/* the transparent 3: sheens over a ghost of the suit */
+function motifGlass(ink, suit) {
+  return `
+    <path d="M9 100 L43 4 L55 4 L21 100 Z" fill="#ffffff" fill-opacity=".5"/>
+    <path d="M55 100 L68 58 L71 58 L71 100 Z" fill="#ffffff" fill-opacity=".28"/>
+    <path d="M26 100 L54 22 L60 22 L32 100 Z" fill="#ffffff" fill-opacity=".16"/>
+    <text x="37" y="72" font-size="34" fill="${ink}" fill-opacity=".62" text-anchor="middle">${suit}</text>
+    <ellipse cx="37" cy="62" rx="17" ry="19" fill="none" stroke="#ffffff" stroke-opacity=".5" stroke-width="1.2"/>`;
+}
+
 function cardSVG(card) {
   const red = card.suit === "♥" || card.suit === "♦";
-  const color = red ? "#c62828" : "#1a1a2e";
   const label = RANK_LABEL(card.rank);
-  const special = [2,3,7,10,11].includes(card.rank);
+  const art = SPECIAL_ART[card.rank];
+
+  if (!art) {
+    const color = red ? "#c62828" : "#1a1a2e";
+    return `
+    <svg viewBox="0 0 74 104" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="72" height="102" rx="7" fill="#fdfdf8" stroke="#999" stroke-width="1"/>
+      <text x="8" y="20" font-size="16" font-weight="bold" fill="${color}" font-family="Georgia,serif">${label}</text>
+      <text x="8" y="36" font-size="14" fill="${color}">${card.suit}</text>
+      <text x="66" y="96" font-size="16" font-weight="bold" fill="${color}" font-family="Georgia,serif" text-anchor="end" transform="rotate(180 62 89)">${label}</text>
+      <text x="37" y="66" font-size="30" fill="${color}" text-anchor="middle">${card.suit}</text>
+    </svg>`;
+  }
+
+  // on the dark 10 the suit has to go light, or it vanishes into the card
+  const suitInk = art.dark ? "#e9edf5" : (red ? "#c62828" : "#1a1a2e");
+  const rankInk = art.dark ? "#ffffff" : art.ink;
+  const motif = card.rank === 10 ? motifBomb(art.ink)
+    : card.rank === 2 ? motifReset(art.ink)
+    : card.rank === 7 ? motifCap(art.ink)
+    : card.rank === 11 ? motifReverse(art.ink)
+    : motifGlass(art.ink, card.suit);
+  const gid = "cg" + card.rank;
   return `
   <svg viewBox="0 0 74 104" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="1" width="72" height="102" rx="7" fill="#fdfdf8" stroke="#999" stroke-width="1"/>
-    ${special ? `<rect x="3" y="3" width="68" height="98" rx="5" fill="none" stroke="#e6b800" stroke-width="1.5"/>` : ""}
-    <text x="8" y="20" font-size="16" font-weight="bold" fill="${color}" font-family="Georgia,serif">${label}</text>
-    <text x="8" y="36" font-size="14" fill="${color}">${card.suit}</text>
-    <text x="66" y="96" font-size="16" font-weight="bold" fill="${color}" font-family="Georgia,serif" text-anchor="end" transform="rotate(180 62 89)">${label}</text>
-    <text x="37" y="66" font-size="30" fill="${color}" text-anchor="middle">${card.suit}</text>
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${art.top}"/><stop offset="100%" stop-color="${art.bot}"/>
+    </linearGradient></defs>
+    <rect x="1" y="1" width="72" height="102" rx="7" fill="url(#${gid})" stroke="${art.edge}" stroke-width="1.4"/>
+    <rect x="4" y="4" width="66" height="96" rx="5" fill="none" stroke="${art.edge}" stroke-opacity=".5" stroke-width="1"/>
+    ${motif}
+    <text x="8" y="20" font-size="16" font-weight="bold" fill="${rankInk}" font-family="Georgia,serif">${label}</text>
+    <text x="8" y="35" font-size="13" fill="${suitInk}">${card.suit}</text>
+    <text x="37" y="96" font-size="6.4" fill="${art.ink}" fill-opacity=".85" text-anchor="middle"
+          letter-spacing="1.5" font-weight="bold">${art.caption}</text>
   </svg>`;
 }
 function cardBackSVG() {
@@ -1801,9 +1944,18 @@ function render() {
     const badge = document.createElement("div");
     badge.className = "run-badge";
     badge.textContent = "×" + view.topRun;
+    if (view.topRun >= 3) badge.classList.add("fire");     // three of a kind — it's alight
     if (view.opts.burn > 0 && view.topRun === view.opts.burn - 1) badge.classList.add("hot");
     if (view.topRun !== prevTopRun) { badge.style.animation = "none"; void badge.offsetWidth; badge.style.animation = ""; }
     ps.appendChild(badge);
+    // embers thrown off each time the run grows while it's burning
+    if (view.topRun > prevTopRun && view.topRun >= 3) {
+      const c = centerOf(pileRect());
+      burstAt(c.x, c.y - 26, {
+        count: 16, spread: 110, dur: .85,
+        colors: ["#fff3b0", "#ffd54a", "#ff9f1a", "#ff6a00", "#e8341c"],
+      });
+    }
   }
   prevTopRun = view.topRun;
   const note = document.getElementById("effective-note");
