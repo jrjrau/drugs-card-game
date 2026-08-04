@@ -665,15 +665,18 @@
 <div id="home" class="overlay show">
   <div class="panel">
     <h2>D R U G S</h2>
+    <div class="menu-hint" id="link-hint" style="display:none">Joining room <b id="link-code"></b></div>
     <input type="text" id="name-input" placeholder="Your name" maxlength="16">
+    <button id="link-join-btn" style="display:none; width:220px">Join</button>
     <button id="create-btn" style="width:220px">Create room</button>
-    <div style="display:flex; gap:8px;">
+    <div id="code-row" style="display:flex; gap:8px;">
       <input type="text" id="code-input" placeholder="CODE" maxlength="4" style="width:120px; text-transform:uppercase;">
       <button id="join-btn" class="secondary">Join</button>
       <button id="watch-btn" class="secondary" title="Watch a game in progress">👁 Watch</button>
     </div>
     <button id="howto-btn" class="secondary" style="width:220px">How to play</button>
     <div id="err"></div>
+    <button id="link-watch-btn" class="secondary" style="display:none">👁 Watch instead</button>
     <div class="legal-links">
       <a href="privacy" target="_blank" rel="noopener">Privacy</a> ·
       <a href="terms" target="_blank" rel="noopener">Terms</a>
@@ -746,6 +749,7 @@
     <h2>LOBBY</h2>
     <div class="menu-hint">Share this code with your friends:</div>
     <div class="room-code" id="lobby-code"></div>
+    <button id="copy-link-btn" class="secondary" style="display:none">🔗 Copy link</button>
     <div class="lobby-list" id="lobby-players"></div>
     <div class="menu-hint" id="deal-hint"></div>
     <div id="host-opts" style="display:none; flex-direction:column; gap:12px; align-items:center;">
@@ -1514,6 +1518,8 @@ function connect() {
         sysChat(spectating ? "You're watching room " + msg.code + " — you can chat, but not play."
                            : "You're in room " + msg.code);
         if (msg.rejoined) { toast("Welcome back — you've got your seat back.", "good", true); banner("Back in!", "cool"); }
+        if (linkCode) exitJoiningMode();   // the link did its job — reset the home screen
+        setRoomUrl(msg.code);   // the address bar is the mid-game share link
         break;
       case "state":
         view = msg.view;
@@ -1548,7 +1554,16 @@ function connect() {
         break;
       }
       case "error":
+        if (linkCode && msg.notFound) {
+          // Dead share link — say so and fall back to the normal home screen.
+          exitJoiningMode();
+          document.getElementById("err").textContent = "That room no longer exists.";
+          sysChat("⚠ That room no longer exists.");
+          break;
+        }
         document.getElementById("err").textContent = msg.msg;
+        if (linkCode && msg.inProgress)
+          document.getElementById("link-watch-btn").style.display = "";
         sysChat("⚠ " + msg.msg);
         break;
       // An admin ended the room — say so, then drop back to a clean menu.
@@ -1556,6 +1571,7 @@ function connect() {
         sysChat("⚠ " + msg.msg);
         banner("Game closed", "bad");
         toast(msg.msg, "bad", true);
+        clearRoomUrl();   // don't reload into a dead room's share link
         setTimeout(() => location.reload(), 3500);
         break;
     }
@@ -1572,7 +1588,7 @@ function createRoom() {
 }
 function joinRoom() {
   const name = document.getElementById("name-input").value.trim();
-  const code = document.getElementById("code-input").value.trim().toUpperCase();
+  const code = linkCode || document.getElementById("code-input").value.trim().toUpperCase();
   if (!name) return document.getElementById("err").textContent = "Enter a name first.";
   if (code.length !== 4) return document.getElementById("err").textContent = "Codes are 4 characters.";
   ws.send(JSON.stringify({ t: "join", name, code }));
@@ -2024,7 +2040,7 @@ function renderTableInto(el, faceUp, faceDownCount, isMe, zone, legal) {
 }
 
 document.getElementById("code-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); joinRoom(); } });
-document.getElementById("name-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); createRoom(); } });
+document.getElementById("name-input").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); linkCode ? joinRoom() : createRoom(); } });
 
 /* All handlers are bound here rather than as inline onclick attributes —
  * Discord's Activity proxy enforces a CSP that blocks inline handlers. */
@@ -2091,6 +2107,66 @@ async function initDiscord() {
   }
 }
 initDiscord();
+
+/* ---- Share links ----
+   /?room=CODE opens the home screen in joining mode: code prefilled and
+   hidden, just type a name and hit Join. While in a room the address bar
+   carries the share link, so mid-game sharing is a plain URL-bar copy.
+   Inside Discord none of this applies — the origin there is Discord's
+   proxy, so a copied URL would be wrong outside it. */
+let linkCode = null;
+
+function setRoomUrl(code) {
+  if (!inDiscord) history.replaceState(null, "", location.pathname + "?room=" + code);
+}
+function clearRoomUrl() {
+  if (!inDiscord) history.replaceState(null, "", location.pathname);
+}
+function shareUrl(code) {
+  return location.origin + location.pathname + "?room=" + code;
+}
+function exitJoiningMode() {
+  linkCode = null;
+  clearRoomUrl();
+  document.getElementById("link-hint").style.display = "none";
+  document.getElementById("link-join-btn").style.display = "none";
+  document.getElementById("link-watch-btn").style.display = "none";
+  document.getElementById("create-btn").style.display = "";
+  document.getElementById("code-row").style.display = "flex";
+}
+(function initShareLink() {
+  if (inDiscord) return;
+  const raw = (new URLSearchParams(location.search).get("room") || "").trim().toUpperCase();
+  if (!/^[A-Z2-9]{4}$/.test(raw)) return;
+  linkCode = raw;
+  document.getElementById("link-code").textContent = linkCode;
+  document.getElementById("link-hint").style.display = "";
+  document.getElementById("link-join-btn").style.display = "";
+  document.getElementById("create-btn").style.display = "none";
+  document.getElementById("code-row").style.display = "none";
+  document.getElementById("name-input").focus();
+})();
+document.getElementById("link-join-btn").onclick = joinRoom;
+document.getElementById("link-watch-btn").onclick = () => {
+  const name = document.getElementById("name-input").value.trim() || "Someone";
+  ws.send(JSON.stringify({ t: "spectate", name, code: linkCode }));
+};
+(function initCopyLink() {
+  const b = document.getElementById("copy-link-btn");
+  if (inDiscord) return;   // stays display:none
+  b.style.display = "";
+  let revert = null;
+  b.onclick = () => {
+    if (!view || !view.code) return;
+    navigator.clipboard.writeText(shareUrl(view.code))
+      .then(() => { b.textContent = "✅ Link copied!"; },
+            () => { b.textContent = "❌ Copy failed — share the code instead"; })
+      .then(() => {   // revert only after the outcome has been visible
+        clearTimeout(revert);
+        revert = setTimeout(() => { b.textContent = "🔗 Copy link"; }, 2000);
+      });
+  };
+})();
 
 /* ---- presentation init ---- */
 applyTheme(localStorage.getItem("drugsTheme") || "classic");

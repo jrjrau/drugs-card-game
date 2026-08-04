@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/rules.test.js",
+    "test": "node test/rules.test.js && node test/share-link.test.js",
     "build": "esbuild sdk-entry.js --bundle --minify --format=iife --global-name=DiscordEmbedded --outfile=public/vendor/discord-sdk.js"
   },
   "dependencies": {

@@ -904,8 +904,10 @@ function handle(ws, msg) {
     }
     case "join": {
       if (room || ws._watching) return;
+      // notFound / inProgress flags let the share-link client react without
+      // string-matching the message text.
       const r = rooms.get(String(msg.code || "").toUpperCase());
-      if (!r) return send(ws, { t: "error", msg: "Room not found." });
+      if (!r) return send(ws, { t: "error", msg: "Room not found.", notFound: true });
       const wanted = String(msg.name || "Player").slice(0, 16);
       if (r.phase !== "lobby") {
         // Rejoin: take back your own seat, which a bot has been covering.
@@ -924,7 +926,7 @@ function handle(ws, msg) {
         }
         const taken = r.players.find(p => !p.bot && p.connected && p.name.trim().toLowerCase() === key);
         if (taken) return send(ws, { t: "error", msg: `"${taken.name}" is already connected in that game.` });
-        return send(ws, { t: "error", msg: "That game is already in progress — you can watch it instead." });
+        return send(ws, { t: "error", msg: "That game is already in progress — you can watch it instead.", inProgress: true });
       }
       if (r.players.filter(p => !p.bot).length >= 6) return send(ws, { t: "error", msg: "Room full (6 players max)." });
       const p = addHuman(r, ws, wanted);
@@ -1044,4 +1046,5 @@ if (require.main === module) {
 module.exports = {
   makeDeck, effectiveTop, canPlayRank, resolvePlay, pickUpPile, topRunCount,
   activeZone, legalIndices, drawUp, hasWon, RANK_LABEL, cardName,
+  server,   // so tests can listen on an ephemeral port (see test/share-link.test.js)
 };
