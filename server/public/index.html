@@ -724,9 +724,11 @@
       z-index: 31;
     }
     #chat-toggle .chat-dot {
-      position: absolute; top: 2px; right: 2px;
-      width: 12px; height: 12px; border-radius: 50%;
+      position: absolute; top: -4px; right: -4px;
+      min-width: 18px; height: 18px; border-radius: 9px;
       background: #e53935; display: none;
+      font-size: .66rem; line-height: 18px; font-weight: 700;
+      padding: 0 4px; text-align: center;
     }
     #chat-toggle.unread .chat-dot { display: block; }
     #tools { right: 70px; }
@@ -735,6 +737,19 @@
     #emote-bar button { width: 30px; height: 30px; font-size: .95rem; }
     #toast-slot { bottom: 64px; }
   }
+
+  /* ---- chat embedded in an overlay panel (lobby / game over) ----
+   * Placed after the compact-layout media query on purpose: .embedded must
+   * beat the mobile slide-in rules (fixed position + translateX). */
+  #chat-col.embedded {
+    display: flex;
+    position: static; transform: none; transition: none;
+    width: 100%; height: 180px;
+    border-left: none; box-shadow: none; z-index: auto;
+    background: rgba(0,0,0,.25); border-radius: 10px;
+  }
+  #chat-col.embedded h3 { display: none; }
+  body.chat-embedded #chat-toggle { display: none; }
 
   /* ---- table themes ---- */
   body.theme-classic  { --felt: #1e5c3a; --felt-dark: #14432a; }
@@ -971,6 +986,7 @@
       <button id="deal-btn" style="font-size:1.05rem; padding:10px 40px;">Deal</button>
     </div>
     <div class="menu-hint" id="lobby-wait" style="display:none">Waiting for the host to start…</div>
+    <div id="lobby-chat-slot" style="width:100%"></div>
   </div>
 </div>
 
@@ -980,6 +996,7 @@
     <h2 id="overlay-title"></h2>
     <div id="end-awards"></div>
     <div id="end-players"></div>
+    <div id="end-chat-slot" style="width:100%"></div>
     <div style="display:flex; gap:12px;">
       <button id="again-btn">Back to lobby</button>
     </div>
@@ -2375,6 +2392,29 @@ function toggleDressup(show) {
 }
 
 /* ============ Chat ============ */
+/* One chat element, three homes. The lobby and game-over overlays cover the
+ * sidebar, so the chat node moves into their panels while they're up and back
+ * beside the table when play starts. Reparenting (not duplicating) means there
+ * is only ever one message list — nothing to keep in sync. */
+function mountChat(where) {
+  const col = document.getElementById("chat-col");
+  const slot = where === "lobby" ? document.getElementById("lobby-chat-slot")
+             : where === "end"   ? document.getElementById("end-chat-slot")
+             : null;
+  if (slot) {
+    if (col.parentElement !== slot) slot.appendChild(col);
+    col.classList.add("embedded");
+    col.classList.remove("open");
+    document.body.classList.add("chat-embedded");
+    clearUnread();
+  } else {
+    if (col.parentElement !== document.body) document.getElementById("game-col").after(col);
+    col.classList.remove("embedded");
+    document.body.classList.remove("chat-embedded");
+  }
+  const box = document.getElementById("chat-msgs");
+  box.scrollTop = box.scrollHeight;
+}
 function chatOpen() {
   const col = document.getElementById("chat-col");
   return getComputedStyle(document.getElementById("chat-toggle")).display === "none" ||
@@ -2383,14 +2423,27 @@ function chatOpen() {
 function toggleChat() {
   const col = document.getElementById("chat-col");
   col.classList.toggle("open");
-  if (col.classList.contains("open")) {
-    document.getElementById("chat-toggle").classList.remove("unread");
-  }
+  if (col.classList.contains("open")) clearUnread();
+}
+let unreadChats = 0;
+function clearUnread() {
+  unreadChats = 0;
+  const btn = document.getElementById("chat-toggle");
+  btn.classList.remove("unread");
+  btn.querySelector(".chat-dot").textContent = "";
 }
 function markUnread() {
-  if (!chatOpen()) document.getElementById("chat-toggle").classList.add("unread");
+  if (chatOpen()) return;
+  unreadChats++;
+  const btn = document.getElementById("chat-toggle");
+  btn.classList.add("unread");
+  btn.querySelector(".chat-dot").textContent = unreadChats > 9 ? "9+" : String(unreadChats);
 }
 function addChat(from, text) {
+  if (!chatOpen()) {
+    const peek = text.length > 60 ? text.slice(0, 57) + "…" : text;
+    toast("💬 " + from + ": " + peek);
+  }
   markUnread();
   const box = document.getElementById("chat-msgs");
   const div = document.createElement("div");
@@ -2414,6 +2467,22 @@ document.getElementById("chat-form").addEventListener("submit", e => {
   const text = inp.value.trim();
   if (text && ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "chat", text }));
   inp.value = "";
+  inp.blur();   // hand the keyboard back to the game; Enter starts the next message
+});
+
+/* Enter grabs the chat input from anywhere in a room; Esc gives it back
+ * (keeping any draft). The home screen keeps its own Enter handlers. */
+window.addEventListener("keydown", e => {
+  const inp = document.getElementById("chat-input");
+  const active = document.activeElement;
+  if (e.key === "Escape" && active === inp) { inp.blur(); return; }
+  if (e.key !== "Enter" || active === inp) return;
+  if (active && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(active.tagName)) return;
+  if (document.getElementById("home").classList.contains("show")) return;
+  if (!ws || ws.readyState !== 1 || !view) return;
+  e.preventDefault();
+  if (!chatOpen()) toggleChat();
+  inp.focus();
 });
 
 /* ============ Rules helpers (mirror of server, for highlighting only) ============ */
@@ -2468,9 +2537,11 @@ function onState() {
     document.getElementById("host-opts").style.display = view.isHost ? "flex" : "none";
     document.getElementById("lobby-wait").style.display = view.isHost ? "none" : "block";
     setStatus("Waiting in lobby…");
+    mountChat("lobby");
   } else {
     lobby.classList.remove("show");
     if (view.phase !== "over") over.classList.remove("show");
+    mountChat(view.phase === "over" ? "end" : "side");
     if (view.phase === "playing") updateTurnStatus();
   }
   renderGift();
